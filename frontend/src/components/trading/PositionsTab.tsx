@@ -61,7 +61,6 @@ export function PositionsTab({ positions, historyPositions, view, onViewChange }
           }}
           pageSizeOptions={[25, 50, 100]}
           disableRowSelectionOnClick
-          sx={{ border: 0 }}
         />
       </Box>
     );
@@ -84,7 +83,7 @@ export function PositionsTab({ positions, historyPositions, view, onViewChange }
         }
         sx={{ pb: 0 }}
       />
-      <CardContent sx={{ p: 0, '&:last-child': { pb: 0 } }}>
+      <CardContent>
         {view === 'open' ? renderDataGrid(positions) : renderDataGrid(historyPositions)}
       </CardContent>
     </Card>

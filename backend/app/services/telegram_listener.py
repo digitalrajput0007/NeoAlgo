@@ -590,7 +590,7 @@ class TelegramListenerService:
                     underlying=sig.underlying,
                     strike=float(sig.strike),
                     option_type=sig.option_type,
-                    expiry=sig.expiry.isoformat() if sig.expiry else None
+                    expiry=None  # Force auto-selection of nearest weekly expiry
                 )
                 resolved_token = resolved.get("pSymbol") or str(resolved.get("instrument_token", resolved.get("token")))
                 resolved_symbol = resolved.get("symbol", resolved_token)

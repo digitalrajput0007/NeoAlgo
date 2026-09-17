@@ -209,6 +209,78 @@ class KotakNeoBroker(BrokerInterface):
             return []
         # Real HTTP GET would go here
         return []
+        
+    async def get_broker_funds(self) -> Dict[str, Any]:
+        """Fetch real account limits from Kotak Neo"""
+        if self.auth_status != "CONNECTED" or not self.trade_token or not self.dynamic_base_url:
+            return {"status": "error", "message": f"Cannot fetch funds: {self.auth_status}"}
+            
+        url = f"{self.dynamic_base_url.rstrip('/')}/Orders/2.0/quick/user/limits"
+        headers = {
+            "Sid": self.trading_sid,
+            "Auth": self.trade_token,
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+        data = {"seg": "ALL", "exch": "ALL", "prod": "ALL"}
+        
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(url, headers=headers, data=data)
+                if response.status_code == 200:
+                    resp_json = response.json()
+                    # Example response structure usually contains a 'data' list.
+                    # We will return the raw parsed response to be handled by the service.
+                    return {"status": "success", "data": resp_json}
+                else:
+                    return {"status": "error", "message": f"HTTP {response.status_code} - {response.text}"}
+        except Exception as e:
+            logger.error(f"Error fetching broker funds: {str(e)}")
+            return {"status": "error", "message": "Failed to connect to broker API for funds"}
+            
+    async def get_margin_required(self, exchange_segment: str, price: float, order_type: str, 
+                                  product: str, quantity: int, instrument_token: str, 
+                                  transaction_type: str) -> Dict[str, Any]:
+        """Fetch real margin required for a specific trade calculation"""
+        if self.auth_status != "CONNECTED" or not self.trade_token or not self.dynamic_base_url:
+            return {"status": "error", "message": f"Cannot fetch margin: {self.auth_status}"}
+            
+        url = f"{self.dynamic_base_url.rstrip('/')}/Orders/2.0/quick/user/check-margin"
+        headers = {
+            "Sid": self.trading_sid,
+            "Auth": self.trade_token,
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+        
+        # Simplified payload based on SDK expectations
+        body_params = {
+            "exSeg": exchange_segment,
+            "prc": str(price),
+            "prcTp": order_type,
+            "prod": product,
+            "qty": str(quantity),
+            "tok": instrument_token,
+            "trnsTp": transaction_type,
+            "trgPrc": "0", # simplified
+            "brkName": "KOTAK", # generic
+            "brnchId": "KOTAK",
+            "slAbsOrTks": "0",
+            "slVal": "0",
+            "sqrOffAbsOrTks": "0",
+            "sqrOffVal": "0",
+            "trailSL": "0",
+            "tSLTks": "0"
+        }
+        
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(url, headers=headers, data=body_params)
+                if response.status_code == 200:
+                    return {"status": "success", "data": response.json()}
+                else:
+                    return {"status": "error", "message": f"HTTP {response.status_code} - {response.text}"}
+        except Exception as e:
+            logger.error(f"Error fetching margin required: {str(e)}")
+            return {"status": "error", "message": "Failed to connect to broker API for margin"}
 
     async def download_scrip_master(self, file_path: str = "data/instruments.csv") -> bool:
         """
@@ -273,29 +345,44 @@ class KotakNeoBroker(BrokerInterface):
                 data = response.json().get("data", {})
                 files_paths = data.get("filesPaths", [])
                 
-                # Find the nse_fo file
+                # Find the nse_fo and bse_fo files
                 nse_fo_url = None
+                bse_fo_url = None
                 for path in files_paths:
                     if "nse_fo" in path.lower():
                         nse_fo_url = path
-                        break
+                    elif "bse_fo" in path.lower():
+                        bse_fo_url = path
                 
                 if not nse_fo_url:
                     logger.error("nse_fo.csv URL not found in Kotak API response.")
                     return False
+                if not bse_fo_url:
+                    logger.warning("bse_fo.csv URL not found in Kotak API response. SENSEX options may be unavailable.")
                 
-                # 2. Download the actual CSV
-                csv_response = await client.get(nse_fo_url)
-                if csv_response.status_code != 200:
-                    logger.error("Failed to download Scrip Master CSV.")
-                    return False
-                
+                # 2. Download the CSVs
                 temp_dir = tempfile.gettempdir()
                 temp_path = os.path.join(temp_dir, f"kotak_scrip_master_{int(datetime.now(timezone.utc).timestamp())}.csv")
                 
-                with open(temp_path, 'wb') as f:
-                    f.write(csv_response.content)
+                with open(temp_path, 'wb') as f_out:
+                    csv_response = await client.get(nse_fo_url)
+                    if csv_response.status_code != 200:
+                        logger.error("Failed to download nse_fo Scrip Master CSV.")
+                        return False
+                    f_out.write(csv_response.content)
                     
+                    if bse_fo_url:
+                        bse_response = await client.get(bse_fo_url)
+                        if bse_response.status_code == 200:
+                            # Write bse_fo content, but skip the first line (header) if it exists
+                            content_lines = bse_response.content.split(b'\n', 1)
+                            if len(content_lines) > 1:
+                                f_out.write(content_lines[1])
+                            else:
+                                f_out.write(bse_response.content)
+                        else:
+                            logger.error(f"Failed to download bse_fo Scrip Master CSV. Status: {bse_response.status_code}")
+                            
                 # 3. Validate: must contain active (future) NIFTY F&O contracts.
                 # Kotak lExpiryDate uses a non-standard epoch ~10 years behind Unix.
                 # The official SDK (scrip_search.py:84) adds 315511200 s before comparison.

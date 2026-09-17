@@ -851,6 +851,9 @@ class UpdateRiskConfigRequest(BaseModel):
     entry_timeout_minutes: Optional[int] = 15
     entry_tolerance: Optional[float] = 1.0
     
+    quantity_mode: Optional[str] = "FIXED"
+    fixed_lots: Optional[int] = 1
+    
     partial_profit_enabled: Optional[bool] = False
     partial_profit_trigger: Optional[float] = 10.00
     partial_profit_percentage: Optional[float] = 50.0
@@ -879,6 +882,8 @@ async def get_risk_config(db: AsyncSession = Depends(get_db)):
             is_algo_active=True,
             entry_timeout_minutes=15,
             entry_tolerance=1.0,
+            quantity_mode="FIXED",
+            fixed_lots=1,
             partial_profit_enabled=False,
             partial_profit_trigger=10.0,
             partial_profit_percentage=50.0,
@@ -902,6 +907,8 @@ async def get_risk_config(db: AsyncSession = Depends(get_db)):
         "is_algo_active": bool(settings.is_algo_active),
         "entry_timeout_minutes": int(settings.entry_timeout_minutes if settings.entry_timeout_minutes is not None else 15),
         "entry_tolerance": float(settings.entry_tolerance if getattr(settings, "entry_tolerance", None) is not None else 1.0),
+        "quantity_mode": str(getattr(settings, "quantity_mode", None) or "FIXED"),
+        "fixed_lots": int(getattr(settings, "fixed_lots", None) or 1),
         "partial_profit_enabled": bool(getattr(settings, "partial_profit_enabled", False)),
         "partial_profit_trigger": float(getattr(settings, "partial_profit_trigger", 10.0)),
         "partial_profit_percentage": float(getattr(settings, "partial_profit_percentage", 50.0)),
@@ -955,6 +962,8 @@ async def update_risk_config(req: UpdateRiskConfigRequest, db: AsyncSession = De
     settings.is_algo_active = bool(req.is_algo_active)
     settings.entry_timeout_minutes = int(entry_timeout)
     settings.entry_tolerance = float(entry_tolerance)
+    settings.quantity_mode = str(req.quantity_mode) if req.quantity_mode else "FIXED"
+    settings.fixed_lots = int(req.fixed_lots) if req.fixed_lots else 1
     settings.partial_profit_enabled = bool(req.partial_profit_enabled)
     settings.partial_profit_trigger = float(req.partial_profit_trigger)
     settings.partial_profit_percentage = float(req.partial_profit_percentage)
@@ -974,6 +983,8 @@ async def update_risk_config(req: UpdateRiskConfigRequest, db: AsyncSession = De
             "max_simultaneous_positions": req.max_simultaneous_positions,
             "entry_timeout_minutes": int(entry_timeout),
             "entry_tolerance": float(entry_tolerance),
+            "quantity_mode": req.quantity_mode,
+            "fixed_lots": req.fixed_lots,
             "daily_loss_protection_enabled": req.daily_loss_protection_enabled,
             "max_trades_protection_enabled": req.max_trades_protection_enabled,
             "max_positions_protection_enabled": req.max_positions_protection_enabled,

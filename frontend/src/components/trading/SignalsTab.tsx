@@ -51,7 +51,7 @@ export function SignalsTab({ signals }: SignalsTabProps) {
         subheader="Real-time options trading signals received from Telegram."
         sx={{ borderBottom: 1, borderColor: 'divider' }}
       />
-      <CardContent sx={{ p: 0, '&:last-child': { pb: 0 } }}>
+      <CardContent>
         <Box sx={{ height: 600, width: '100%' }}>
           <DataGrid
             rows={signals}
@@ -62,7 +62,6 @@ export function SignalsTab({ signals }: SignalsTabProps) {
             }}
             pageSizeOptions={[25, 50, 100]}
             disableRowSelectionOnClick
-            sx={{ border: 0 }}
           />
         </Box>
       </CardContent>

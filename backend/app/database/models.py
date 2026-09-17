@@ -57,6 +57,10 @@ class TradingSettings(Base):
     max_trades_protection_enabled = Column(Boolean, default=True)
     max_positions_protection_enabled = Column(Boolean, default=True)
     
+    # Phase 12 Configs
+    quantity_mode = Column(String, default="FIXED")
+    fixed_lots = Column(Integer, default=1)
+    
     # Phase 10E Configs
     partial_profit_enabled = Column(Boolean, default=False)
     partial_profit_trigger = Column(Float, default=10.00)

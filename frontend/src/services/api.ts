@@ -249,6 +249,12 @@ export const api = {
     return res.json();
   },
 
+  async getBrokerFunds(refresh: boolean = false): Promise<any> {
+    const res = await fetchWithAuth(`${API_BASE}/broker/kotak/funds?refresh=${refresh}`);
+    if (!res.ok) throw new Error('Failed to fetch broker funds');
+    return res.json();
+  },
+
   async getRiskStatus(): Promise<RiskStatus> {
     const res = await fetchWithAuth(`${API_BASE}/risk/status`);
     if (!res.ok) throw new Error('Failed to fetch risk status');

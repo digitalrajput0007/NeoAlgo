@@ -23,6 +23,8 @@ MONTH_MAP = {
 
 def parse_date(date_str: str) -> Optional[date]:
     """Parse string like '15 Sept 26' or '08 Sept 26' into a date object."""
+    if not date_str:
+        return None
     match = re.search(r'(\d{1,2})\s+([a-zA-Z]+)\s+(\d{2,4})', date_str)
     if not match:
         return None
@@ -80,19 +82,17 @@ def parse_new_signal(text: str) -> TradeSignal:
     # Tgt above 170
     # CMP 150
     
-    underlying_match = re.search(r'^([A-Za-z]+)\s+(\d+)\s+(CE|PE)\s+(.*?Expiry)', text, re.IGNORECASE | re.MULTILINE)
+    underlying_match = re.search(r'^[ \t]*([A-Za-z]+)[ \t]+(\d+)[ \t]+(CE|PE)(?:[ \t]+(.*?))?[ \t]*$', text, re.IGNORECASE | re.MULTILINE)
     if not underlying_match:
-        raise ValueError("Missing or invalid instrument line (e.g. NIFTY 23500 CE 15 Sept 26 Expiry)")
+        raise ValueError("Missing or invalid instrument line (e.g. SENSEX 74000 CE or NIFTY 23500 PE 15 Sept 26 Expiry)")
     
     underlying = underlying_match.group(1).upper()
     strike = int(underlying_match.group(2))
     option_type = underlying_match.group(3).upper()
     expiry_str = underlying_match.group(4)
     
-    expiry_date = parse_date(expiry_str)
-    if not expiry_date:
-        raise ValueError(f"Could not parse expiry date from: {expiry_str}")
-        
+    expiry_date = parse_date(expiry_str) if expiry_str else None
+    
     entry_match = re.search(r'buy\s+(above|below)\s+([\d.]+)', text, re.IGNORECASE)
     sl_match = re.search(r'sl below\s+([\d.]+)', text, re.IGNORECASE)
     tgt_match = re.search(r'tgt above\s+([\d.]+)', text, re.IGNORECASE)

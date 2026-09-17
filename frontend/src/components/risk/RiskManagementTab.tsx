@@ -10,12 +10,18 @@ import Switch from "@mui/material/Switch";
 import Button from "@mui/material/Button";
 import Alert from "@mui/material/Alert";
 import Grid from "@mui/material/Grid";
+import Select from "@mui/material/Select";
+import MenuItem from "@mui/material/MenuItem";
+import FormControl from "@mui/material/FormControl";
+import InputLabel from "@mui/material/InputLabel";
 import Accordion from "@mui/material/Accordion";
 import AccordionSummary from "@mui/material/AccordionSummary";
 import AccordionDetails from "@mui/material/AccordionDetails";
 import SaveIcon from "@mui/icons-material/Save";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+
+import { useState } from 'react';
 
 interface RiskManagementTabProps {
   riskConfig: RiskConfig | null;
@@ -46,6 +52,8 @@ export function RiskManagementTab({ riskConfig, onSaveRiskConfig, saving, messag
     max_risk_per_trade: 1000,
     max_trades_per_day: 5,
     max_simultaneous_positions: 2,
+    quantity_mode: 'FIXED',
+    fixed_lots: 1,
     daily_loss_protection_enabled: true,
     max_trades_protection_enabled: true,
     max_positions_protection_enabled: true,
@@ -60,6 +68,8 @@ export function RiskManagementTab({ riskConfig, onSaveRiskConfig, saving, messag
     trailing_activation_profit: 500,
     trailing_distance: 200,
   } as RiskConfig;
+
+  const [quantityMode, setQuantityMode] = useState(config.quantity_mode || 'FIXED');
 
   return (
     <Box sx={{ maxWidth: '100%', mx: 'auto', animation: 'fadeIn 0.3s' }}>
@@ -121,6 +131,32 @@ export function RiskManagementTab({ riskConfig, onSaveRiskConfig, saving, messag
               <AccordionDetails>
                 <Grid container spacing={3}>
                   <Grid size={{ xs: 12, md: 6 }}>
+                    <FormControl fullWidth size="small">
+                      <InputLabel>Quantity Mode</InputLabel>
+                      <Select
+                        label="Quantity Mode"
+                        name="quantity_mode"
+                        value={quantityMode}
+                        onChange={(e) => setQuantityMode(e.target.value)}
+                      >
+                        <MenuItem value="FIXED">Fixed Lots</MenuItem>
+                        <MenuItem value="RISK_BASED">Risk Based</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <TextField
+                      fullWidth
+                      type="number"
+                      label="Fixed Lots"
+                      name="fixed_lots"
+                      defaultValue={config.fixed_lots || 1}
+                      disabled={quantityMode !== 'FIXED'}
+                      size="small"
+                      helperText="Used only if Quantity Mode is Fixed Lots"
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
                     <TextField
                       fullWidth
                       type="number"
@@ -128,7 +164,9 @@ export function RiskManagementTab({ riskConfig, onSaveRiskConfig, saving, messag
                       label="Max Risk Per Trade (₹)"
                       name="max_risk_per_trade"
                       defaultValue={config.max_risk_per_trade}
+                      disabled={false}
                       size="small"
+                      helperText="Global limit. In Risk Based mode, sets lot size. In Fixed mode, blocks trade if exceeded."
                     />
                   </Grid>
                   <Grid size={{ xs: 12, md: 6 }}>

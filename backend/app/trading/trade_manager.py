@@ -102,6 +102,32 @@ class TradeManager:
             is_allowed = False
             reason = "NEW_TRADES_PAUSED"
 
+        # Calculate Quantity based on Sizing Mode
+        quantity_mode = getattr(active_settings, "quantity_mode", "FIXED") if active_settings else "FIXED"
+        fixed_lots = int(getattr(active_settings, "fixed_lots", 1)) if active_settings else 1
+        
+        calculated_lots = 0
+        if quantity_mode == "FIXED":
+            calculated_lots = fixed_lots
+        elif quantity_mode == "RISK_BASED":
+            max_risk_per_trade = float(getattr(active_settings, "max_risk_per_trade", 2000.0)) if active_settings else 2000.0
+            entry_trigger = float(signal_data.entry_trigger) if signal_data.entry_trigger else 0.0
+            stop_loss = float(signal_data.stop_loss) if signal_data.stop_loss else 0.0
+            
+            risk_per_unit = abs(entry_trigger - stop_loss)
+            if risk_per_unit > 0:
+                max_units = max_risk_per_trade / risk_per_unit
+                calculated_lots = math.floor(max_units / lot_size)
+            else:
+                calculated_lots = 0
+
+        # Enforce minimum
+        if calculated_lots < 1:
+            is_allowed = False
+            reason = "INSUFFICIENT_RISK_BUDGET_FOR_1_LOT"
+            
+        final_quantity = calculated_lots * lot_size
+
         # 1. Check Risk constraints with entry, stop loss, and lot size
         if is_allowed:
             is_allowed, reason = await self.risk_manager.check_new_trade_allowed(
@@ -109,8 +135,63 @@ class TradeManager:
                 broker_account_id=broker_account_id,
                 entry_trigger=float(signal_data.entry_trigger) if signal_data.entry_trigger is not None else None,
                 stop_loss=float(signal_data.stop_loss) if signal_data.stop_loss is not None else None,
-                quantity=lot_size
+                quantity=final_quantity
             )
+            
+        # 2. Broker Funds Margin Validation
+        if is_allowed:
+            # We require margin_required to pass
+            from app.brokers.kotak_neo import get_kotak_broker
+            kotak = get_kotak_broker()
+            # Calculate margin required for final_quantity at entry_trigger
+            margin_resp = await kotak.get_margin_required(
+                exchange_segment="nse_fo", # typically
+                price=float(signal_data.entry_trigger) if signal_data.entry_trigger else 0.0,
+                order_type="MARKET", # generic check
+                product="NRML",
+                quantity=final_quantity,
+                instrument_token=instrument_token,
+                transaction_type="BUY" # generic
+            )
+            
+            # Fetch current available funds
+            funds_resp = await kotak.get_broker_funds()
+            if funds_resp.get("status") == "success":
+                funds_data = funds_resp.get("data", [])
+                avail_margin = 0.0
+                if isinstance(funds_data, list):
+                    for item in funds_data:
+                        if isinstance(item, dict):
+                            avail_margin += float(item.get("Net", 0.0) or item.get("marginAvailable", 0.0) or 0.0)
+                elif isinstance(funds_data, dict):
+                    avail_margin = float(funds_data.get("Net", 0.0) or funds_data.get("marginAvailable", 0.0) or 0.0)
+                    
+                # Parse margin required
+                req_margin = 0.0
+                if margin_resp.get("status") == "success":
+                    req_data = margin_resp.get("data", {})
+                    # Usually returned in a specific field, assume generic generic logic or fallback to total
+                    try:
+                        # Extract margin required from check-margin response
+                        if isinstance(req_data, dict) and "data" in req_data and isinstance(req_data["data"], list) and len(req_data["data"]) > 0:
+                             req_margin = float(req_data["data"][0].get("totalMarginRequired", 0.0))
+                        elif isinstance(req_data, list) and len(req_data) > 0:
+                             req_margin = float(req_data[0].get("totalMarginRequired", 0.0))
+                    except Exception as e:
+                        logger.error(f"Error parsing margin required: {e}")
+                        
+                # Fallback to naive calculation if API parsing fails
+                if req_margin == 0.0:
+                    req_margin = final_quantity * float(signal_data.entry_trigger)
+                    
+                if avail_margin < req_margin:
+                    logger.warning(f"[PAPER MODE] INSUFFICIENT_BROKER_MARGIN (Req: {req_margin}, Avail: {avail_margin}). Allowing trade anyway for paper mode.")
+                    # is_allowed = False
+                    # reason = f"INSUFFICIENT_BROKER_MARGIN (Req: {req_margin}, Avail: {avail_margin})"
+            else:
+                logger.warning("BROKER_FUNDS_FETCH_FAILED. Allowing trade anyway for paper mode.")
+                # is_allowed = False
+                # reason = "BROKER_FUNDS_FETCH_FAILED"
 
         # Build risk configuration snapshot if accepted
         risk_snapshot = None
@@ -124,6 +205,10 @@ class TradeManager:
                 "max_trades_protection_enabled": bool(getattr(active_settings, "max_trades_protection_enabled", True)),
                 "max_positions_protection_enabled": bool(getattr(active_settings, "max_positions_protection_enabled", True)),
                 "entry_timeout_minutes": int(getattr(active_settings, "entry_timeout_minutes", 15)),
+                "quantity_mode": quantity_mode,
+                "calculated_lots": calculated_lots,
+                "lot_size": lot_size,
+                "final_quantity": final_quantity,
                 "evaluated_at": datetime.now(timezone.utc).isoformat()
             }
 
@@ -168,7 +253,7 @@ class TradeManager:
             broker_account_id=broker_account_id,
             status=initial_state,
             instrument_token=instrument_token,
-            quantity=0, # Will be populated on entry
+            quantity=final_quantity if is_allowed else 0, # Stored quantity
             risk_snapshot=risk_snapshot,
             entry_timeout_minutes=entry_timeout_mins,
             entry_expires_at=entry_expires_at,

@@ -154,4 +154,10 @@ class InstrumentResolver:
 
         # Sort by normalized (corrected) expiry timestamp ascending; pick nearest
         candidates.sort(key=lambda x: x["expiry_ts"])
+        
+        if len(candidates) > 1 and candidates[0]["expiry_ts"] == candidates[1]["expiry_ts"]:
+            # Check if they really have the same token/pSymbol. If not, it's ambiguous.
+            if candidates[0]["token_data"]["pSymbol"] != candidates[1]["token_data"]["pSymbol"]:
+                raise ValueError(f"AMBIGUOUS_INSTRUMENT: Multiple distinct contracts found with identical nearest expiry for {underlying} {strike} {option_type}")
+                
         return candidates[0]["token_data"]

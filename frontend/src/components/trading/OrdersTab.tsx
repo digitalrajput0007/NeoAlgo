@@ -55,7 +55,6 @@ export function OrdersTab({ orders, historyOrders, view, onViewChange }: OrdersT
           }}
           pageSizeOptions={[25, 50, 100]}
           disableRowSelectionOnClick
-          sx={{ border: 0 }}
         />
       </Box>
     );
@@ -78,7 +77,7 @@ export function OrdersTab({ orders, historyOrders, view, onViewChange }: OrdersT
         }
         sx={{ pb: 0 }}
       />
-      <CardContent sx={{ p: 0, '&:last-child': { pb: 0 } }}>
+      <CardContent>
         {view === 'current' ? renderDataGrid(orders) : renderDataGrid(historyOrders)}
       </CardContent>
     </Card>

@@ -70,7 +70,6 @@ export function TradesTab({ activeTrades, historyTrades, view, onViewChange, onT
           disableRowSelectionOnClick
           onRowClick={(params) => onTradeClick(params.row as TradeItem)}
           sx={{
-            border: 0,
             '& .MuiDataGrid-row': { cursor: 'pointer' }
           }}
         />
@@ -95,7 +94,7 @@ export function TradesTab({ activeTrades, historyTrades, view, onViewChange, onT
         }
         sx={{ pb: 0 }}
       />
-      <CardContent sx={{ p: 0, '&:last-child': { pb: 0 } }}>
+      <CardContent>
         {view === 'active' ? renderDataGrid(activeTrades) : renderDataGrid(historyTrades)}
       </CardContent>
     </Card>

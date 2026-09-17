@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Body, Query
 from app.brokers.kotak_neo import get_kotak_broker
+from app.services.broker_service import broker_service
 from typing import Dict, Any, Optional
 
 router = APIRouter()
@@ -49,3 +50,11 @@ async def get_kotak_orders() -> Dict[str, Any]:
         await kotak_broker.authenticate()
     orders = await kotak_broker.get_orders()
     return {"orders": orders}
+
+@router.get("/kotak/funds")
+async def get_kotak_funds(refresh: bool = Query(False)) -> Dict[str, Any]:
+    if not kotak_broker.is_connected:
+        await kotak_broker.authenticate()
+        
+    funds = await broker_service.get_cached_broker_funds(force_refresh=refresh)
+    return {"funds": funds}

@@ -53,13 +53,16 @@ async def run_diagnostics():
     print("PHASE 5A: LIVE MARKET DATA / INSTRUMENT RESOLUTION DIAGNOSTIC")
     print("=" * 70)
 
+    broker = KotakNeoBroker()
+
     # ─────────────────────────────────────────────────────────────────────────
     # 1. Review & Verify Scrip Master
     # ─────────────────────────────────────────────────────────────────────────
     master_path = os.path.join("data", "instruments.csv")
-    if not os.path.exists(master_path):
-        print(f"ERROR: Master file {master_path} not found.")
-        return
+    if True:  # Force download for now
+        print(f"Downloading Scrip Master to {master_path}...")
+        await broker.authenticate()
+        success = await broker.download_scrip_master(master_path)
 
     stat = os.stat(master_path)
     print(f"SCRIP MASTER FILE: {master_path}")

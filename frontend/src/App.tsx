@@ -87,6 +87,8 @@ export function App() {
   const [formRiskPerTrade, setFormRiskPerTrade] = useState('2000');
   const [formMaxTrades, setFormMaxTrades] = useState('5');
   const [formMaxPositions, setFormMaxPositions] = useState('2');
+  const [formQuantityMode, setFormQuantityMode] = useState('FIXED');
+  const [formFixedLots, setFormFixedLots] = useState('1');
   const [formEntryTimeout, setFormEntryTimeout] = useState('15');
   const [formEntryTolerance, setFormEntryTolerance] = useState('1.0');
   const [formDailyLossEnabled, setFormDailyLossEnabled] = useState(true);
@@ -301,6 +303,8 @@ export function App() {
       setFormRiskPerTrade(riskConfig.max_risk_per_trade.toString());
       setFormMaxTrades(riskConfig.max_trades_per_day.toString());
       setFormMaxPositions(riskConfig.max_simultaneous_positions.toString());
+      setFormQuantityMode(riskConfig.quantity_mode || 'FIXED');
+      setFormFixedLots(riskConfig.fixed_lots?.toString() || '1');
       setFormEntryTimeout(riskConfig.entry_timeout_minutes?.toString() || '15');
       setFormEntryTolerance(riskConfig.entry_tolerance?.toString() || '1.0');
       setFormDailyLossEnabled(riskConfig.daily_loss_protection_enabled);
@@ -322,23 +326,38 @@ export function App() {
     setRiskSaving(true);
     setRiskMsg(null);
 
-    const dailyLoss = parseFloat(formDailyLoss);
-    const riskPerTrade = parseFloat(formRiskPerTrade);
-    const maxTrades = parseInt(formMaxTrades, 10);
-    const maxPositions = parseInt(formMaxPositions, 10);
-    const entryTimeout = parseInt(formEntryTimeout, 10);
-    const entryTolerance = parseFloat(formEntryTolerance);
-    const partialProfitTrigger = parseFloat(formPartialProfitTrigger);
-    const partialProfitPercentage = parseFloat(formPartialProfitPercentage);
-    const trailingActivationProfit = formTrailingMode === 'IMMEDIATE' ? parseFloat(formTrailingActivationProfit) : null;
-    const trailingDistance = parseFloat(formTrailingDistance);
+    const formData = new FormData(e.currentTarget as HTMLFormElement);
+    
+    const dailyLoss = parseFloat(formData.get('max_daily_loss') as string);
+    const riskPerTrade = parseFloat(formData.get('max_risk_per_trade') as string) || riskConfig?.max_risk_per_trade || 1000;
+    const maxTrades = parseInt(formData.get('max_trades_per_day') as string, 10);
+    const maxPositions = parseInt(formData.get('max_simultaneous_positions') as string, 10);
+    const quantityMode = (formData.get('quantity_mode') as string) || 'FIXED';
+    const fixedLots = parseInt(formData.get('fixed_lots') as string, 10) || riskConfig?.fixed_lots || 1;
+    const entryTimeout = parseInt(formData.get('entry_timeout_minutes') as string, 10);
+    const entryTolerance = parseFloat(formData.get('entry_tolerance') as string);
+    const partialProfitTrigger = parseFloat(formData.get('partial_profit_trigger') as string) || riskConfig?.partial_profit_trigger || 10.0;
+    const partialProfitPercentage = parseFloat(formData.get('partial_profit_percentage') as string) || riskConfig?.partial_profit_percentage || 50.0;
+    
+    const trailingMode = formData.get('trailing_activation_mode') as string || riskConfig?.trailing_activation_mode || 'AFTER_PARTIAL_PROFIT';
+    // Use fallback for trailingActivationProfit if it evaluates to NaN, but still conditionally extract it.
+    let tap = parseFloat(formData.get('trailing_activation_profit') as string);
+    const trailingActivationProfit = !isNaN(tap) ? tap : (riskConfig?.trailing_activation_profit || 10.0);
+    const trailingDistance = parseFloat(formData.get('trailing_distance') as string) || riskConfig?.trailing_distance || 5.0;
+
+    // Switches return 'on' when checked
+    const dailyLossEnabled = formData.get('daily_loss_protection_enabled') === 'on';
+    const maxTradesEnabled = formData.get('max_trades_protection_enabled') === 'on';
+    const maxPositionsEnabled = formData.get('max_positions_protection_enabled') === 'on';
+    const partialProfitEnabled = formData.get('partial_profit_enabled') === 'on';
+    const trailingStopEnabled = formData.get('trailing_stop_enabled') === 'on';
 
     if (isNaN(dailyLoss) || dailyLoss <= 0) {
       setRiskMsg({ type: 'error', text: 'Max Daily Loss must be a positive number greater than 0.' });
       setRiskSaving(false);
       return;
     }
-    if (isNaN(riskPerTrade) || riskPerTrade <= 0) {
+    if (quantityMode === 'RISK_BASED' && (isNaN(riskPerTrade) || riskPerTrade <= 0)) {
       setRiskMsg({ type: 'error', text: 'Max Risk Per Trade must be a positive number greater than 0.' });
       setRiskSaving(false);
       return;
@@ -350,6 +369,11 @@ export function App() {
     }
     if (isNaN(maxPositions) || maxPositions <= 0) {
       setRiskMsg({ type: 'error', text: 'Max Simultaneous Positions must be an integer greater than 0.' });
+      setRiskSaving(false);
+      return;
+    }
+    if (quantityMode === 'FIXED' && (isNaN(fixedLots) || fixedLots <= 0)) {
+      setRiskMsg({ type: 'error', text: 'Fixed Lots must be an integer greater than 0.' });
       setRiskSaving(false);
       return;
     }
@@ -370,17 +394,19 @@ export function App() {
         max_risk_per_trade: riskPerTrade,
         max_trades_per_day: maxTrades,
         max_simultaneous_positions: maxPositions,
-        daily_loss_protection_enabled: formDailyLossEnabled,
-        max_trades_protection_enabled: formMaxTradesEnabled,
-        max_positions_protection_enabled: formMaxPositionsEnabled,
+        quantity_mode: quantityMode,
+        fixed_lots: fixedLots,
+        daily_loss_protection_enabled: dailyLossEnabled,
+        max_trades_protection_enabled: maxTradesEnabled,
+        max_positions_protection_enabled: maxPositionsEnabled,
         is_algo_active: riskConfig?.is_algo_active ?? true,
         entry_timeout_minutes: entryTimeout,
         entry_tolerance: entryTolerance,
-        partial_profit_enabled: formPartialProfitEnabled,
+        partial_profit_enabled: partialProfitEnabled,
         partial_profit_trigger: partialProfitTrigger,
         partial_profit_percentage: partialProfitPercentage,
-        trailing_stop_enabled: formTrailingStopEnabled,
-        trailing_activation_mode: formTrailingMode,
+        trailing_stop_enabled: trailingStopEnabled,
+        trailing_activation_mode: trailingMode,
         trailing_activation_profit: trailingActivationProfit,
         trailing_distance: trailingDistance
       });

@@ -133,7 +133,7 @@ async def get_trading_status(db: AsyncSession = Depends(get_db)):
     
     ist = pytz.timezone('Asia/Kolkata')
     now = datetime.now(ist)
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(pytz.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(pytz.utc).replace(tzinfo=None)
     
     daily_pnl = 0.0
     daily_trades = 0

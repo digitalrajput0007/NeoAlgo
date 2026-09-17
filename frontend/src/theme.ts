@@ -4,39 +4,30 @@ export const theme = createTheme({
   palette: {
     mode: 'light',
     primary: {
-      main: '#4338ca',
-      light: '#6366f1',
-      dark: '#312e81',
-    },
-    secondary: {
-      main: '#ec4899',
-      light: '#f472b6',
-      dark: '#be185d',
+      main: '#2563EB',
+      dark: '#1E3A8A',
     },
     success: {
-      main: '#10b981',
-      light: '#34d399',
-      dark: '#047857',
+      main: '#16A34A',
     },
     error: {
-      main: '#ef4444',
-      light: '#f87171',
-      dark: '#b91c1c',
+      main: '#DC2626',
     },
     warning: {
-      main: '#f59e0b',
-      light: '#fbbf24',
-      dark: '#b45309',
+      main: '#D97706',
     },
     info: {
-      main: '#0ea5e9',
-      light: '#38bdf8',
-      dark: '#0369a1',
+      main: '#0284C7',
     },
     background: {
-      default: '#f1f5f9',
-      paper: '#ffffff',
+      default: '#F5F7FA',
+      paper: '#FFFFFF',
     },
+    text: {
+      primary: '#0F172A',
+      secondary: '#64748B',
+    },
+    divider: '#E2E8F0',
   },
   typography: {
     fontFamily: '"Poppins", "Inter", "Roboto", sans-serif',
@@ -52,64 +43,40 @@ export const theme = createTheme({
     button: { textTransform: 'none', fontWeight: 600, fontSize: '0.9rem' },
   },
   shape: {
-    borderRadius: 10,
+    borderRadius: 8,
   },
   components: {
     MuiCssBaseline: {
       styleOverrides: `
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap');
+        body {
+          background-color: #F5F7FA;
+          color: #0F172A;
+        }
       `,
     },
     MuiButton: {
       styleOverrides: {
         root: {
-          borderRadius: 10,
+          borderRadius: 8,
           padding: '8px 20px',
           fontWeight: 600,
           boxShadow: 'none',
+          '&:hover': {
+            boxShadow: 'none',
+          }
         },
       },
-      variants: [
-        {
-          props: { variant: 'contained', color: 'primary' },
-          style: {
-            background: 'linear-gradient(135deg, #4338ca 0%, #6366f1 100%)',
-            '&:hover': {
-              background: 'linear-gradient(135deg, #312e81 0%, #4338ca 100%)',
-              boxShadow: '0 4px 12px rgba(67, 56, 202, 0.4)',
-            },
-          }
-        },
-        {
-          props: { variant: 'contained', color: 'error' },
-          style: {
-            background: 'linear-gradient(135deg, #dc2626 0%, #ef4444 100%)',
-            '&:hover': {
-              background: 'linear-gradient(135deg, #b91c1c 0%, #dc2626 100%)',
-              boxShadow: '0 4px 12px rgba(239, 68, 68, 0.4)',
-            },
-          }
-        },
-        {
-          props: { variant: 'contained', color: 'success' },
-          style: {
-            background: 'linear-gradient(135deg, #047857 0%, #10b981 100%)',
-            '&:hover': {
-              background: 'linear-gradient(135deg, #065f46 0%, #047857 100%)',
-              boxShadow: '0 4px 12px rgba(16, 185, 129, 0.4)',
-            },
-          }
-        }
-      ],
     },
     MuiCard: {
       styleOverrides: {
         root: {
-          borderRadius: 14,
-          border: '1px solid #e2e8f0',
-          boxShadow: '0 1px 3px 0 rgb(0 0 0 / 0.08), 0 4px 16px -4px rgb(0 0 0 / 0.06)',
+          borderRadius: 8,
+          border: '1px solid #E2E8F0',
+          boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+          backgroundImage: 'none',
           '&:hover': {
-            boxShadow: '0 4px 20px -2px rgb(0 0 0 / 0.12)',
+            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)',
           },
           transition: 'box-shadow 0.2s ease',
         },
@@ -117,11 +84,14 @@ export const theme = createTheme({
     },
     MuiPaper: {
       styleOverrides: {
+        root: {
+          backgroundImage: 'none',
+        },
         rounded: {
-          borderRadius: 14,
+          borderRadius: 8,
         },
         outlined: {
-          borderColor: '#e2e8f0',
+          borderColor: '#E2E8F0',
         },
       },
     },
@@ -136,15 +106,17 @@ export const theme = createTheme({
           padding: 3,
           '&.Mui-checked': {
             transform: 'translateX(22px)',
+            color: '#fff',
             '& + .MuiSwitch-track': {
               opacity: 1,
+              backgroundColor: '#2563EB',
             },
           },
         },
         thumb: {
           width: 24,
           height: 24,
-          boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
         },
         track: {
           borderRadius: 15,
@@ -157,6 +129,7 @@ export const theme = createTheme({
       styleOverrides: {
         root: {
           fontWeight: 600,
+          borderRadius: 6,
         },
       },
     },
@@ -164,8 +137,11 @@ export const theme = createTheme({
       styleOverrides: {
         root: {
           '& .MuiOutlinedInput-root': {
-            borderRadius: 10,
+            borderRadius: 8,
             fontWeight: 500,
+            '& fieldset': {
+              borderColor: '#E2E8F0',
+            },
           },
         },
       },
@@ -173,14 +149,17 @@ export const theme = createTheme({
     MuiTableCell: {
       styleOverrides: {
         head: {
-          fontWeight: 700,
-          fontSize: '0.8rem',
+          fontWeight: 600,
+          fontSize: '0.75rem',
           textTransform: 'uppercase',
-          letterSpacing: '0.04em',
-          color: '#475569',
+          letterSpacing: '0.05em',
+          color: '#64748B',
+          borderBottom: '1px solid #E2E8F0',
         },
         body: {
           fontSize: '0.85rem',
+          color: '#0F172A',
+          borderBottom: '1px solid #E2E8F0',
         },
       },
     },
@@ -189,6 +168,25 @@ export const theme = createTheme({
         root: {
           height: 8,
           borderRadius: 4,
+          backgroundColor: '#E2E8F0',
+        },
+      },
+    },
+    MuiAppBar: {
+      styleOverrides: {
+        root: {
+          backgroundColor: '#FFFFFF',
+          color: '#0F172A',
+          borderBottom: '1px solid #E2E8F0',
+          boxShadow: 'none',
+        },
+      },
+    },
+    MuiDrawer: {
+      styleOverrides: {
+        paper: {
+          backgroundColor: '#FFFFFF',
+          borderRight: '1px solid #E2E8F0',
         },
       },
     },

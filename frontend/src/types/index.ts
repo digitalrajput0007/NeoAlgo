@@ -231,6 +231,15 @@ export interface BrokerStatus {
   } | null;
 }
 
+export interface BrokerFunds {
+  available_margin: number;
+  used_margin: number;
+  available_cash: number;
+  updated_at?: string;
+  error?: boolean;
+  message?: string;
+}
+
 export interface RiskConfig {
   max_daily_loss: number;
   max_risk_per_trade: number;
@@ -242,6 +251,8 @@ export interface RiskConfig {
   is_algo_active: boolean;
   entry_timeout_minutes: number;
   entry_tolerance: number;
+  quantity_mode: string;
+  fixed_lots: number;
   partial_profit_enabled: boolean;
   partial_profit_trigger: number;
   partial_profit_percentage: number;
@@ -263,6 +274,8 @@ export interface UpdateRiskConfigRequest {
   is_algo_active?: boolean;
   entry_timeout_minutes?: number;
   entry_tolerance?: number;
+  quantity_mode?: string;
+  fixed_lots?: number;
   partial_profit_enabled?: boolean;
   partial_profit_trigger?: number;
   partial_profit_percentage?: number;

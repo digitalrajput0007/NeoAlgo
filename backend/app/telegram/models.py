@@ -17,7 +17,7 @@ class TradeSignal(BaseModel):
     underlying: str
     strike: int
     option_type: str  # CE | PE
-    expiry: date
+    expiry: Optional[date] = None
     entry_trigger: Decimal
     entry_direction: str  # "ABOVE" or "BELOW"
     stop_loss: Decimal
@@ -27,6 +27,8 @@ class TradeSignal(BaseModel):
 
     @model_validator(mode='after')
     def validate_logic(self):
+        if self.underlying.upper() not in ("NIFTY", "SENSEX"):
+            raise ValueError(f"UNSUPPORTED_UNDERLYING: {self.underlying} is not supported.")
         if self.strike <= 0:
             raise ValueError("Strike must be greater than 0")
         if self.entry_trigger <= 0:
