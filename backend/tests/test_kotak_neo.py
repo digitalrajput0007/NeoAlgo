@@ -84,11 +84,11 @@ async def test_successful_authentication_flow(kotak_broker, caplog):
             
         def totp_login(self, mobile_number, ucc, totp):
             call_args_list.append({"method": "totp_login", "mobile": mobile_number, "ucc": ucc, "totp": totp})
-            return {"stat": "Ok", "data": {"token": "mock_view_token", "sid": "mock_view_sid"}}
+            return {"data": {"status": "success", "token": "mock_view_token", "sid": "mock_view_sid"}}
             
         def totp_validate(self, mpin):
             call_args_list.append({"method": "totp_validate", "mpin": mpin})
-            return {"stat": "Ok", "data": {"token": "mock_trade_token", "sid": "mock_trade_sid", "baseUrl": "https://mock.base.url"}}
+            return {"data": {"status": "success", "token": "mock_trade_token", "sid": "mock_trade_sid", "baseUrl": "https://mock.base.url"}}
             
     with patch("neo_api_client.neo_api.NeoAPI", MockNeoAPI):
         success = await kotak_broker.authenticate()
@@ -125,7 +125,7 @@ async def test_authentication_failed_sanitized(kotak_broker, caplog):
         def __init__(self, consumer_key, environment):
             pass
         def totp_login(self, mobile_number, ucc, totp):
-            return {"stat": "NotOk", "error": [{"code": "401", "message": "Unauthorized"}]}
+            return {"error": [{"code": "401", "message": "Unauthorized"}]}
             
     with patch("neo_api_client.neo_api.NeoAPI", MockNeoAPI):
         success = await kotak_broker.authenticate()
@@ -286,7 +286,7 @@ async def test_authentication_error_logging_sanitized(kotak_broker, caplog):
         def __init__(self, consumer_key, environment):
             pass
         def totp_login(self, mobile_number, ucc, totp):
-            return {"stat": "NotOk", "error": [{"code": "10508", "message": "TOTP not registered for this user."}]}
+            return {"error": [{"code": "10508", "message": "TOTP not registered for this user."}]}
 
     with patch("neo_api_client.neo_api.NeoAPI", MockNeoAPIFailStep1):
         success = await kotak_broker.authenticate()
@@ -301,9 +301,9 @@ async def test_authentication_error_logging_sanitized(kotak_broker, caplog):
         def __init__(self, consumer_key, environment):
             pass
         def totp_login(self, mobile_number, ucc, totp):
-            return {"stat": "Ok", "data": {"token": "mock_view_token", "sid": "mock_view_sid"}}
+            return {"data": {"status": "success", "token": "mock_view_token", "sid": "mock_view_sid"}}
         def totp_validate(self, mpin):
-            return {"stat": "NotOk", "error": [{"code": "10509", "message": "Invalid MPIN."}]}
+            return {"error": [{"code": "10509", "message": "Invalid MPIN."}]}
 
     with patch("neo_api_client.neo_api.NeoAPI", MockNeoAPIFailStep2):
         success = await kotak_broker.authenticate()

@@ -118,7 +118,7 @@ class KotakNeoBroker(BrokerInterface):
                 totp=current_totp
             )
             
-            if not login_response or (isinstance(login_response, dict) and login_response.get("stat") != "Ok"):
+            if not login_response or (isinstance(login_response, dict) and login_response.get("data", {}).get("status") != "success"):
                 err_msg = ""
                 if isinstance(login_response, dict):
                     err_json = login_response.get("error", [{}])
@@ -137,7 +137,7 @@ class KotakNeoBroker(BrokerInterface):
                 mpin=self.mpin
             )
             
-            if not mpin_response or (isinstance(mpin_response, dict) and mpin_response.get("stat") != "Ok"):
+            if not mpin_response or (isinstance(mpin_response, dict) and mpin_response.get("data", {}).get("status") != "success"):
                 err_msg = ""
                 if isinstance(mpin_response, dict):
                     err_json = mpin_response.get("error", [{}])
