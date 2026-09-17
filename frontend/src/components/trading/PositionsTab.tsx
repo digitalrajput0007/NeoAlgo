@@ -16,7 +16,7 @@ interface PositionsTabProps {
 
 export function PositionsTab({ positions, historyPositions, view, onViewChange }: PositionsTabProps) {
   
-  const columns: GridColDef[] = [
+  const openColumns: GridColDef[] = [
     { field: 'instrument', headerName: 'Instrument', flex: 1.5, minWidth: 200, renderCell: (params: GridRenderCellParams) => <Box sx={{ fontWeight: 700 }}>{params.value}</Box> },
     { field: 'quantity', headerName: 'Quantity', flex: 0.8, minWidth: 100, type: 'number' },
     { field: 'average_entry', headerName: 'Entry', flex: 1, minWidth: 120, type: 'number', valueFormatter: (value: any) => value ? `₹${value.toFixed(2)}` : '—' },
@@ -50,12 +50,46 @@ export function PositionsTab({ positions, historyPositions, view, onViewChange }
     }
   ];
 
-  const renderDataGrid = (posList: PositionItem[]) => {
+  const historyColumns: GridColDef[] = [
+    { field: 'instrument', headerName: 'Instrument', flex: 1.5, minWidth: 200, renderCell: (params: GridRenderCellParams) => <Box sx={{ fontWeight: 700 }}>{params.value}</Box> },
+    { field: 'quantity', headerName: 'Quantity', flex: 0.8, minWidth: 100, type: 'number' },
+    { field: 'average_entry', headerName: 'Entry', flex: 1, minWidth: 120, type: 'number', valueFormatter: (value: any) => value ? `₹${value.toFixed(2)}` : '—' },
+    { 
+      field: 'exit_price', 
+      headerName: 'Exit', 
+      flex: 1,
+      minWidth: 120, 
+      type: 'number', 
+      renderCell: (params: GridRenderCellParams) => (
+        <Box sx={{ bgcolor: 'grey.50', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', px: 1 }}>
+          {params.value !== undefined && params.value !== null ? `₹${(params.value as number).toFixed(2)}` : '—'}
+        </Box>
+      ) 
+    },
+    { 
+      field: 'realized_pnl', 
+      headerName: 'Realized P&L', 
+      flex: 1.2,
+      minWidth: 140, 
+      type: 'number',
+      renderCell: (params: GridRenderCellParams) => {
+        const val = params.value as number;
+        if (val === undefined || val === null) return '—';
+        return (
+          <Box sx={{ fontWeight: 700, color: val > 0 ? 'success.main' : val < 0 ? 'error.main' : 'text.primary' }}>
+            ₹{val.toFixed(2)}
+          </Box>
+        );
+      }
+    }
+  ];
+
+  const renderDataGrid = (posList: PositionItem[], cols: GridColDef[]) => {
     return (
       <Box sx={{ height: 600, width: '100%' }}>
         <DataGrid
           rows={posList}
-          columns={columns}
+          columns={cols}
           initialState={{
             pagination: { paginationModel: { page: 0, pageSize: 50 } },
           }}
@@ -84,7 +118,7 @@ export function PositionsTab({ positions, historyPositions, view, onViewChange }
         sx={{ pb: 0 }}
       />
       <CardContent>
-        {view === 'open' ? renderDataGrid(positions) : renderDataGrid(historyPositions)}
+        {view === 'open' ? renderDataGrid(positions, openColumns) : renderDataGrid(historyPositions, historyColumns)}
       </CardContent>
     </Card>
   );

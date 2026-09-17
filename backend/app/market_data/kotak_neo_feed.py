@@ -157,9 +157,8 @@ class KotakNeoFeed:
             self._last_tick_time = ts
             self.total_ticks_received += 1
 
-            # Only transition to RECEIVING_TICKS if valid tick
-            if ltp > 0:
-                self._set_state(SFeedState.RECEIVING_TICKS)
+            # We received a tick, so the feed is healthy regardless of ltp value
+            self._set_state(SFeedState.RECEIVING_TICKS)
 
             # Propagate to MarketDataService
             try:

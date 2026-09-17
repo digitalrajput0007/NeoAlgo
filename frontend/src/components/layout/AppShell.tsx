@@ -2,6 +2,7 @@ import { ReactNode, useState } from "react";
 import { Sidebar } from "./Sidebar";
 import { TopHeader } from "./TopHeader";
 import Box from "@mui/material/Box";
+import { MarketOverviewData } from "../../types";
 
 interface AppShellProps {
   children: ReactNode;
@@ -9,6 +10,7 @@ interface AppShellProps {
   sfeedStatus: string;
   telegramStatus: string;
   newTradesPaused: boolean;
+  marketOverview: MarketOverviewData | null;
 }
 
 export function AppShell({
@@ -17,6 +19,7 @@ export function AppShell({
   sfeedStatus,
   telegramStatus,
   newTradesPaused,
+  marketOverview,
 }: AppShellProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(true);
@@ -42,6 +45,7 @@ export function AppShell({
           sfeedStatus={sfeedStatus}
           telegramStatus={telegramStatus}
           newTradesPaused={newTradesPaused}
+          marketOverview={marketOverview}
           onDrawerToggle={handleDrawerToggle}
           onDesktopDrawerToggle={handleDesktopDrawerToggle}
           drawerOpen={drawerOpen}

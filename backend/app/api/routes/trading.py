@@ -7,6 +7,9 @@ from app.database.database import get_db
 from app.brokers.paper import PaperBroker
 from app.trading.trade_manager import TradeManager
 from app.telegram.models import TradeSignal
+from app.config import settings
+import os
+from pathlib import Path
 
 router = APIRouter()
 
@@ -22,6 +25,87 @@ class MarketPriceResponse(BaseModel):
     instrument: str
     price: float
     affected_trades: List[dict]
+
+class ModeResponse(BaseModel):
+    mode: str
+    live_trading_enabled: bool
+
+class SetModeRequest(BaseModel):
+    mode: str
+    live_trading_enabled: bool
+    confirmation: bool = False
+
+@router.get("/mode", response_model=ModeResponse)
+async def get_trading_mode():
+    return ModeResponse(
+        mode=settings.neoalgo_mode,
+        live_trading_enabled=settings.live_trading_enabled
+    )
+
+@router.post("/mode", response_model=ModeResponse)
+async def set_trading_mode(req: SetModeRequest, db: AsyncSession = Depends(get_db)):
+    from app.database.models import AuditLog
+    
+    if req.mode == "LIVE":
+        if not req.confirmation:
+            raise HTTPException(status_code=400, detail="Explicit confirmation required to enable LIVE mode.")
+        if not req.live_trading_enabled:
+            raise HTTPException(status_code=400, detail="LIVE mode requires live_trading_enabled to be true.")
+    elif req.mode == "PAPER":
+        if not req.confirmation:
+            raise HTTPException(status_code=400, detail="Explicit confirmation required to switch to PAPER mode.")
+    else:
+        raise HTTPException(status_code=400, detail="Invalid mode.")
+
+    # Record Audit Log
+    log = AuditLog(
+        user_id=1,  # Single user architecture
+        action="TRADING_MODE_CHANGED",
+        details={
+            "previous_mode": settings.neoalgo_mode,
+            "new_mode": req.mode,
+            "previous_live_enabled": settings.live_trading_enabled,
+            "new_live_enabled": req.live_trading_enabled
+        }
+    )
+    db.add(log)
+    await db.commit()
+
+    # Update in-memory settings
+    settings.neoalgo_mode = req.mode
+    settings.live_trading_enabled = req.live_trading_enabled
+    
+    # Safely update .env file
+    env_path = Path(__file__).resolve().parent.parent.parent.parent / ".env"
+    if env_path.exists():
+        with open(env_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        
+        new_lines = []
+        mode_found = False
+        live_found = False
+        for line in lines:
+            if line.startswith("NEOALGO_MODE="):
+                new_lines.append(f"NEOALGO_MODE=\"{req.mode}\"\n")
+                mode_found = True
+            elif line.startswith("LIVE_TRADING_ENABLED="):
+                new_lines.append(f"LIVE_TRADING_ENABLED=\"{str(req.live_trading_enabled).lower()}\"\n")
+                live_found = True
+            else:
+                new_lines.append(line)
+                
+        if not mode_found:
+            new_lines.append(f"NEOALGO_MODE=\"{req.mode}\"\n")
+        if not live_found:
+            new_lines.append(f"LIVE_TRADING_ENABLED=\"{str(req.live_trading_enabled).lower()}\"\n")
+            
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.writelines(new_lines)
+
+    return ModeResponse(
+        mode=settings.neoalgo_mode,
+        live_trading_enabled=settings.live_trading_enabled
+    )
 
 @router.post("/test/market-price", response_model=MarketPriceResponse)
 async def inject_market_price(req: MarketPriceInject, db: AsyncSession = Depends(get_db)):

@@ -12,7 +12,8 @@ import type {
   RiskStatus,
   RiskConfig,
   UpdateRiskConfigRequest,
-  AuditLogItem
+  AuditLogItem,
+  TradingModeConfig
 } from '../types';
 
 const API_BASE = 'http://localhost:8000/api';
@@ -249,9 +250,9 @@ export const api = {
     return res.json();
   },
 
-  async getBrokerFunds(refresh: boolean = false): Promise<any> {
-    const res = await fetchWithAuth(`${API_BASE}/broker/kotak/funds?refresh=${refresh}`);
-    if (!res.ok) throw new Error('Failed to fetch broker funds');
+  async getBrokerAccountLimits(refresh: boolean = false): Promise<any> {
+    const res = await fetchWithAuth(`${API_BASE}/broker/account-limits?refresh=${refresh}`);
+    if (!res.ok) throw new Error('Failed to fetch broker account limits');
     return res.json();
   },
 
@@ -400,6 +401,33 @@ export const api = {
   async getDailyAnalytics(days: number = 30): Promise<import('../types').DailyAnalytics[]> {
     const res = await fetchWithAuth(`${API_BASE}/journal/analytics/daily?days=${days}`);
     if (!res.ok) throw new Error('Failed to fetch daily analytics');
+    return res.json();
+  },
+
+  async getMarketOverview(): Promise<import('../types').MarketOverviewData> {
+    const res = await fetchWithAuth(`${API_BASE}/dashboard/market-overview`);
+    if (!res.ok) throw new Error('Failed to fetch market overview');
+    return res.json();
+  },
+
+  async getTradingMode(): Promise<TradingModeConfig> {
+    const res = await fetchWithAuth(`${API_BASE}/trading/mode`);
+    if (!res.ok) throw new Error('Failed to fetch trading mode');
+    return res.json();
+  },
+
+  async setTradingMode(mode: string, live_trading_enabled: boolean, confirmation: boolean): Promise<TradingModeConfig> {
+    const res = await fetchWithAuth(`${API_BASE}/trading/mode`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ mode, live_trading_enabled, confirmation })
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || 'Failed to update trading mode');
+    }
     return res.json();
   },
 };

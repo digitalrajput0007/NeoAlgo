@@ -593,7 +593,7 @@ class TelegramListenerService:
                     expiry=None  # Force auto-selection of nearest weekly expiry
                 )
                 resolved_token = resolved.get("pSymbol") or str(resolved.get("instrument_token", resolved.get("token")))
-                resolved_symbol = resolved.get("symbol", resolved_token)
+                resolved_symbol = resolved.get("underlying", resolved.get("symbol", resolved_token))
                 resolved_segment = resolved.get("exchange_segment", "nse_fo")
                 resolved_trading_symbol = resolved.get("trading_symbol", resolved.get("symbol", resolved_token))
 
@@ -650,7 +650,7 @@ class TelegramListenerService:
             market_data_service.register_trade_interest(
                 token=resolved_token,
                 trade_id=trade_id,
-                symbol=resolved_symbol,
+                symbol=sig.underlying or resolved_symbol,
                 exchange_seg=resolved_segment,
                 trading_symbol=resolved_trading_symbol,
                 strike=float(sig.strike),

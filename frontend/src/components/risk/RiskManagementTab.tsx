@@ -156,19 +156,37 @@ export function RiskManagementTab({ riskConfig, onSaveRiskConfig, saving, messag
                       helperText="Used only if Quantity Mode is Fixed Lots"
                     />
                   </Grid>
-                  <Grid size={{ xs: 12, md: 6 }}>
+                  <Grid size={{ xs: 12, md: 4 }}>
                     <TextField
                       fullWidth
                       type="number"
-                      slotProps={{ htmlInput: { step: "0.01" } }}
-                      label="Max Risk Per Trade (₹)"
-                      name="max_risk_per_trade"
-                      defaultValue={config.max_risk_per_trade}
-                      disabled={false}
+                      label="Nifty Lot Size"
+                      name="nifty_lot_size"
+                      defaultValue={config.nifty_lot_size || 25}
                       size="small"
-                      helperText="Global limit. In Risk Based mode, sets lot size. In Fixed mode, blocks trade if exceeded."
                     />
                   </Grid>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <TextField
+                      fullWidth
+                      type="number"
+                      label="BankNifty Lot Size"
+                      name="banknifty_lot_size"
+                      defaultValue={config.banknifty_lot_size || 15}
+                      size="small"
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <TextField
+                      fullWidth
+                      type="number"
+                      label="Sensex Lot Size"
+                      name="sensex_lot_size"
+                      defaultValue={config.sensex_lot_size || 20}
+                      size="small"
+                    />
+                  </Grid>
+
                   <Grid size={{ xs: 12, md: 6 }}>
                     <TextField
                       fullWidth

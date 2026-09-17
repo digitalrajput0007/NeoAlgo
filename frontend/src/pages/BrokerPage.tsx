@@ -1,7 +1,7 @@
-import { Box, Typography, Card, CardContent, CardActions, Button, Chip, Avatar, CircularProgress, Divider } from '@mui/material';
+import { Box, Typography, Card, CardContent, CardActions, Button, Chip, Avatar, CircularProgress, Divider, Switch, FormControlLabel, Dialog, DialogTitle, DialogContent, DialogActions, Checkbox, Alert } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { useEffect, useState } from 'react';
-import type { BrokerStatus, BrokerFunds } from '../types';
+import type { BrokerStatus, BrokerFunds, TradingModeConfig } from '../types';
 import VerifiedUserIcon from '@mui/icons-material/VerifiedUser';
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import { api } from '../services/api';
@@ -45,13 +45,61 @@ const BROKERS = [
 export function BrokerPage({ status }: BrokerPageProps) {
   const [funds, setFunds] = useState<BrokerFunds | null>(null);
   const [loadingFunds, setLoadingFunds] = useState(false);
+  const [modeConfig, setModeConfig] = useState<TradingModeConfig | null>(null);
+  const [loadingMode, setLoadingMode] = useState(false);
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [confirmChecked, setConfirmChecked] = useState(false);
+  
+  const fetchMode = async () => {
+    try {
+      setLoadingMode(true);
+      const config = await api.getTradingMode();
+      setModeConfig(config);
+    } catch (err) {
+      console.error('Failed to fetch trading mode', err);
+    } finally {
+      setLoadingMode(false);
+    }
+  };
+
+  const handleModeToggle = async () => {
+    if (modeConfig?.mode === 'PAPER') {
+      // Prompt confirmation to go live
+      setConfirmChecked(false);
+      setConfirmDialogOpen(true);
+    } else {
+      // Switch back to paper (no confirmation needed)
+      try {
+        setLoadingMode(true);
+        const config = await api.setTradingMode('PAPER', false, true);
+        setModeConfig(config);
+      } catch (err) {
+        console.error('Failed to set paper mode', err);
+      } finally {
+        setLoadingMode(false);
+      }
+    }
+  };
+
+  const handleConfirmLive = async () => {
+    try {
+      setLoadingMode(true);
+      const config = await api.setTradingMode('LIVE', true, true);
+      setModeConfig(config);
+    } catch (err) {
+      console.error('Failed to set live mode', err);
+    } finally {
+      setLoadingMode(false);
+      setConfirmDialogOpen(false);
+    }
+  };
   
   const fetchFunds = async (refresh = false) => {
     try {
       setLoadingFunds(true);
-      const res = await api.getBrokerFunds(refresh);
-      if (res && res.funds) {
-        setFunds(res.funds);
+      const res = await api.getBrokerAccountLimits(refresh);
+      if (res) {
+        setFunds(res);
       }
     } catch (err) {
       console.error('Failed to fetch broker funds', err);
@@ -66,10 +114,50 @@ export function BrokerPage({ status }: BrokerPageProps) {
     }
   }, [status]);
 
+  useEffect(() => {
+    fetchMode();
+  }, []);
+
   return (
     <Box sx={{ animation: 'fadeIn 0.3s' }}>
       <Typography variant="h5" sx={{ fontWeight: 700, mb: 3 }}>Broker Setup & Funds</Typography>
       
+      {/* Trading Mode Control */}
+      <Card sx={{ mb: 4, border: 1, borderColor: modeConfig?.mode === 'LIVE' ? 'error.main' : 'divider' }}>
+        <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Box>
+            <Typography variant="h6" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
+              Trading Mode
+              {modeConfig?.mode === 'LIVE' ? (
+                <Chip label="LIVE TRADING" color="error" size="small" sx={{ fontWeight: 700 }} />
+              ) : (
+                <Chip label="PAPER TRADING" color="success" size="small" sx={{ fontWeight: 700 }} />
+              )}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              {modeConfig?.mode === 'LIVE' 
+                ? 'Warning: Real orders will be placed using actual funds.' 
+                : 'Safe mode: Orders are simulated. No real money is used.'}
+            </Typography>
+          </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            {loadingMode && <CircularProgress size={24} />}
+            <FormControlLabel
+              control={
+                <Switch 
+                  checked={modeConfig?.mode === 'LIVE'} 
+                  onChange={handleModeToggle}
+                  disabled={loadingMode || !modeConfig}
+                  color="error"
+                />
+              }
+              label={modeConfig?.mode === 'LIVE' ? "Disable Live" : "Enable Live"}
+            />
+          </Box>
+        </CardContent>
+      </Card>
+
+      <Typography variant="h6" sx={{ fontWeight: 700, mb: 2 }}>Broker Connections</Typography>
       <Grid container spacing={3}>
         {BROKERS.map((broker) => {
           // Force Kotak Neo as connected as requested by user
@@ -144,13 +232,19 @@ export function BrokerPage({ status }: BrokerPageProps) {
                       
                       {funds ? (
                         <>
-                          <Typography variant="h6" color={funds.available_margin > 0 ? "success.main" : "error.main"} sx={{ fontWeight: 700 }}>
-                            ₹{funds.available_margin.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          <Typography variant="h6" color={funds.available_margin !== null && funds.available_margin > 0 ? "success.main" : "error.main"} sx={{ fontWeight: 700 }}>
+                            {funds.available_margin !== null ? `₹${funds.available_margin.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : 'N/A'}
                           </Typography>
                           <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
-                            <span>Used: ₹{funds.used_margin.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                            <span>Cash: ₹{funds.available_cash.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                            <span>Used: {funds.used_margin !== null ? `₹${funds.used_margin.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : 'N/A'}</span>
+                            <span>Cash: {funds.available_cash !== null ? `₹${funds.available_cash.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : 'N/A'}</span>
                           </Typography>
+                          {funds.rms_pay_in !== null && (
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
+                              <span>Pay-In: ₹{funds.rms_pay_in.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                              <span>Collateral: {funds.collateral !== null ? `₹${funds.collateral.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : 'N/A'}</span>
+                            </Typography>
+                          )}
                         </>
                       ) : (
                         <Typography variant="body2" color="text.secondary">
@@ -187,6 +281,44 @@ export function BrokerPage({ status }: BrokerPageProps) {
           );
         })}
       </Grid>
+
+      {/* Confirmation Dialog */}
+      <Dialog open={confirmDialogOpen} onClose={() => setConfirmDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ color: 'error.main', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
+          ⚠️ WARNING: ENABLE LIVE TRADING
+        </DialogTitle>
+        <DialogContent>
+          <Alert severity="error" sx={{ mb: 3 }}>
+            You are about to enable LIVE execution mode. Real orders will be placed using your broker account.
+          </Alert>
+          <Typography variant="body1" sx={{ mb: 2 }}>
+            This action involves real financial risk. Please confirm that you understand the risks and wish to proceed.
+          </Typography>
+          <FormControlLabel
+            control={
+              <Checkbox 
+                checked={confirmChecked}
+                onChange={(e) => setConfirmChecked(e.target.checked)}
+                color="error"
+              />
+            }
+            label="I confirm that I want to enable LIVE trading and accept all associated financial risks."
+          />
+        </DialogContent>
+        <DialogActions sx={{ p: 3, pt: 0 }}>
+          <Button onClick={() => setConfirmDialogOpen(false)} color="inherit" variant="outlined">
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleConfirmLive} 
+            color="error" 
+            variant="contained" 
+            disabled={!confirmChecked || loadingMode}
+          >
+            {loadingMode ? <CircularProgress size={24} color="inherit" /> : 'Enable Live Trading'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

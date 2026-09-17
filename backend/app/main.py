@@ -28,6 +28,13 @@ async def lifespan(app: FastAPI):
     
     # Start persistent SFeed background supervisor task
     sfeed_manager = get_sfeed_manager()
+    
+    try:
+        print("Authenticating broker on startup...")
+        await sfeed_manager.broker.authenticate()
+    except Exception as e:
+        print(f"Broker auth error on startup: {e}")
+        
     sfeed_task = asyncio.create_task(sfeed_manager.run_supervisor())
     app.state.sfeed_manager = sfeed_manager
     app.state.sfeed_task = sfeed_task

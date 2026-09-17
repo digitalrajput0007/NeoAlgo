@@ -6,17 +6,18 @@ import Chip from '@mui/material/Chip';
 
 interface KpiCardProps {
   title: string;
-  value: string | number;
-  subtitle?: string;
+  value: React.ReactNode;
+  subtitle?: React.ReactNode;
   icon?: React.ReactNode;
   statusText?: string;
   statusColor?: 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning';
+  valueColor?: string;
 }
 
-export function KpiCard({ title, value, subtitle, icon, statusText, statusColor = 'default' }: KpiCardProps) {
+export function KpiCard({ title, value, subtitle, icon, statusText, statusColor = 'default', valueColor }: KpiCardProps) {
   return (
-    <Card sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+    <Card sx={{ p: 1.5, display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
         <Typography variant="subtitle2" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>
           {title}
         </Typography>
@@ -27,7 +28,7 @@ export function KpiCard({ title, value, subtitle, icon, statusText, statusColor 
         )}
       </Box>
       
-      <Typography variant="h4" component="div" sx={{ mb: 1, fontWeight: 700 }}>
+      <Typography variant="h4" component="div" sx={{ mb: 1, fontWeight: 700, color: valueColor || 'inherit' }}>
         {value}
       </Typography>
       

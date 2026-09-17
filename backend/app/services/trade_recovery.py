@@ -54,11 +54,21 @@ async def restore_active_trades_subscriptions(db_session: Optional[AsyncSession]
             option_type = signal.option_type if signal else ""
             expiry = signal.expiry if signal else ""
 
+            def _determine_exchange_segment(s: str) -> str:
+                s_up = s.upper()
+                if "SENSEX" in s_up or "BANKEX" in s_up:
+                    return "bse_fo"
+                elif "MCX" in s_up:
+                    return "mcx_fo"
+                return "nse_fo"
+
+            exchange_seg = _determine_exchange_segment(symbol)
+
             market_data_service.register_trade_interest(
                 token=token,
                 trade_id=trade.id,
-                symbol=symbol,
-                exchange_seg="nse_fo",
+                symbol=signal.underlying if signal and signal.underlying else symbol,
+                exchange_seg=exchange_seg,
                 strike=strike,
                 option_type=option_type,
                 expiry=expiry,

@@ -11,12 +11,14 @@ import Stack from "@mui/material/Stack";
 import IconButton from "@mui/material/IconButton";
 import MenuIcon from "@mui/icons-material/Menu";
 import MenuOpenIcon from "@mui/icons-material/MenuOpen";
+import { MarketOverviewData, MarketOverviewTicker } from "../../types";
 
 interface TopHeaderProps {
   tradingMode: string;
   sfeedStatus: string;
   telegramStatus: string;
   newTradesPaused: boolean;
+  marketOverview: MarketOverviewData | null;
   onDrawerToggle: () => void;
   onDesktopDrawerToggle: () => void;
   drawerOpen: boolean;
@@ -44,6 +46,7 @@ export function TopHeader({
   sfeedStatus,
   telegramStatus,
   newTradesPaused,
+  marketOverview,
   onDrawerToggle,
   onDesktopDrawerToggle,
   drawerOpen
@@ -84,8 +87,33 @@ export function TopHeader({
 
         <Box sx={{ flexGrow: 1 }} />
 
+        {/* Desktop Tickers & Market Status (Centered) */}
+        <Stack direction="row" spacing={2} sx={{ alignItems: 'center', display: { xs: 'none', md: 'flex' } }}>
+          {marketOverview?.tickers?.filter((t: MarketOverviewTicker) => ['NIFTY 50', 'BANK NIFTY'].includes(t.symbol)).map((ticker: MarketOverviewTicker) => (
+            <Box key={ticker.symbol} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', px: 2, borderRight: '1px solid', borderColor: 'divider' }}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold', lineHeight: 1 }}>{ticker.symbol}</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 'bold', lineHeight: 1.2, color: ticker.status === 'LIVE' ? 'text.primary' : 'warning.main' }}>
+                {ticker.ltp !== null ? ticker.ltp.toFixed(2) : '-'}
+              </Typography>
+            </Box>
+          ))}
+          
+          <Chip
+            size="small"
+            label={marketOverview?.market_status || 'UNKNOWN'}
+            sx={{ 
+              fontWeight: 'bold', 
+              bgcolor: marketOverview?.market_status === 'OPEN' ? 'success.main' : 
+                       marketOverview?.market_status === 'PRE-OPEN' ? 'warning.main' : 'error.main',
+              color: 'white'
+            }}
+          />
+        </Stack>
+
+        <Box sx={{ flexGrow: 1 }} />
+
         <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
-          {tradingMode === "PAPER" && (
+          {tradingMode === "PAPER" ? (
             <Chip
               icon={<SecurityIcon fontSize="small" />}
               label={
@@ -97,6 +125,19 @@ export function TopHeader({
               color="warning"
               variant="outlined"
               sx={{ height: 'auto', p: 0.5, borderRadius: 2 }}
+            />
+          ) : (
+            <Chip
+              icon={<WarningAmberIcon fontSize="small" />}
+              label={
+                <Box sx={{ display: 'flex', flexDirection: 'column', py: 0.5 }}>
+                  <Typography variant="caption" sx={{ fontWeight: 'bold', lineHeight: 1 }}>LIVE TRADING: KOTAK NEO</Typography>
+                  <Typography sx={{ fontSize: '0.65rem', lineHeight: 1 }}>Real financial risk active</Typography>
+                </Box>
+              }
+              color="error"
+              variant="filled"
+              sx={{ height: 'auto', p: 0.5, borderRadius: 2, bgcolor: 'error.main', color: 'white' }}
             />
           )}
 

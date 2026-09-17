@@ -34,8 +34,9 @@ class Settings(BaseSettings):
     # Market Data Safety (Configurable stale tick threshold in seconds)
     market_data_stale_timeout_seconds: int = 60
 
-    # Application Trading Mode ("PAPER" or "LIVE")
-    trading_mode: str = "PAPER"
+    # Application Trading Mode
+    neoalgo_mode: str = "PAPER"
+    live_trading_enabled: bool = False
 
     # Single-User Auth (Phase 11C)
     neoalgo_admin_username: str = "admin"

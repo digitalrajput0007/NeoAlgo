@@ -161,3 +161,56 @@ class InstrumentResolver:
                 raise ValueError(f"AMBIGUOUS_INSTRUMENT: Multiple distinct contracts found with identical nearest expiry for {underlying} {strike} {option_type}")
                 
         return candidates[0]["token_data"]
+
+    async def resolve_index(self, symbol: str) -> Dict[str, Any]:
+        """
+        Resolves a spot index (e.g., NIFTY 50, BANK NIFTY, SENSEX) to its nearest
+        futures contract (FUTIDX) since the current Scrip Master only contains F&O.
+        """
+        if not self._cache:
+            raise RuntimeError("INSTRUMENT_MASTER_UNAVAILABLE: Cannot resolve instruments without a valid master file.")
+
+        candidates = []
+        
+        # Normalize symbol for matching underlying
+        norm_symbol = symbol.upper()
+        if "NIFTY 50" in norm_symbol:
+            norm_symbol = "NIFTY"
+        elif "BANK NIFTY" in norm_symbol:
+            norm_symbol = "BANKNIFTY"
+        elif "SENSEX" in norm_symbol:
+            norm_symbol = "SENSEX"
+
+        for inst in self._cache:
+            try:
+                inst_underlying = str(inst.get("pSymbolName", inst.get("instrument_name", ""))).upper()
+                inst_type = str(inst.get("pInstType", "")).upper()
+                raw_expiry = inst.get("lExpiryDate") or inst.get("pExpiryDate", "")
+                
+                # We want FUTIDX for nearest expiry
+                if inst_underlying == norm_symbol and inst_type == "FUTIDX":
+                    contract_active = is_kotak_fno_contract_active(raw_expiry)
+                    normalized_ts = normalize_kotak_fno_timestamp(raw_expiry)
+
+                    if contract_active and normalized_ts:
+                        candidates.append({
+                            "token_data": {
+                                "instrument_token": str(inst.get("pSymbol", inst.get("instrument_token"))),
+                                "pSymbol":          str(inst.get("pSymbol", inst.get("instrument_token"))),
+                                "symbol":           inst.get("pTrdSymbol", inst.get("instrument_name")),
+                                "pTrdSymbol":       inst.get("pTrdSymbol", inst.get("instrument_name")),
+                                "exchange_segment": inst.get("pExchSeg", inst.get("exchange_segment")),
+                                "pExchSeg":         inst.get("pExchSeg", inst.get("exchange_segment")),
+                                "underlying":       inst_underlying,
+                            },
+                            "expiry_ts": normalized_ts,
+                        })
+            except Exception:
+                continue
+
+        if not candidates:
+            # Fallback for India VIX which might not have FUTIDX
+            return None
+
+        candidates.sort(key=lambda x: x["expiry_ts"])
+        return candidates[0]["token_data"]

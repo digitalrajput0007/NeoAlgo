@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useLocation, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { api } from './services/api';
-import type {
+import type { MarketOverviewData,
   DashboardSummary,
   TelegramStatus,
   StoredTelegramMessage,
@@ -59,6 +59,7 @@ export function App() {
   
   // Data states
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [marketOverview, setMarketOverview] = useState<MarketOverviewData | null>(null);
   const [signals, setSignals] = useState<TradeSignalItem[]>([]);
   const [trades, setTrades] = useState<TradeItem[]>([]);
   const [historyTrades, setHistoryTrades] = useState<TradeItem[]>([]);
@@ -176,6 +177,7 @@ export function App() {
     if (isFetchingSlow.current) return;
     isFetchingSlow.current = true;
     try {
+      let overviewPromise = api.getMarketOverview().catch(e => console.error('Market overview error:', e));
       const [sum, sig, posOpen, ordCurr, telSt, telMsg, brk, rsk, rskCfg, trdSt] = await Promise.allSettled([
         api.getDashboardSummary(),
         api.getSignals(),
@@ -189,6 +191,8 @@ export function App() {
         api.getTradingStatus(),
       ]);
 
+      
+      overviewPromise.then(res => { if (res) setMarketOverview(res as any); });
       if (sum.status === 'fulfilled') setSummary(sum.value);
       if (sig.status === 'fulfilled') setSignals(sig.value);
       if (posOpen.status === 'fulfilled') setPositions(posOpen.value);
@@ -339,6 +343,10 @@ export function App() {
     const partialProfitTrigger = parseFloat(formData.get('partial_profit_trigger') as string) || riskConfig?.partial_profit_trigger || 10.0;
     const partialProfitPercentage = parseFloat(formData.get('partial_profit_percentage') as string) || riskConfig?.partial_profit_percentage || 50.0;
     
+    const niftyLotSize = parseInt(formData.get('nifty_lot_size') as string, 10) || riskConfig?.nifty_lot_size || 25;
+    const bankniftyLotSize = parseInt(formData.get('banknifty_lot_size') as string, 10) || riskConfig?.banknifty_lot_size || 15;
+    const sensexLotSize = parseInt(formData.get('sensex_lot_size') as string, 10) || riskConfig?.sensex_lot_size || 20;
+    
     const trailingMode = formData.get('trailing_activation_mode') as string || riskConfig?.trailing_activation_mode || 'AFTER_PARTIAL_PROFIT';
     // Use fallback for trailingActivationProfit if it evaluates to NaN, but still conditionally extract it.
     let tap = parseFloat(formData.get('trailing_activation_profit') as string);
@@ -396,6 +404,9 @@ export function App() {
         max_simultaneous_positions: maxPositions,
         quantity_mode: quantityMode,
         fixed_lots: fixedLots,
+        nifty_lot_size: niftyLotSize,
+        banknifty_lot_size: bankniftyLotSize,
+        sensex_lot_size: sensexLotSize,
         daily_loss_protection_enabled: dailyLossEnabled,
         max_trades_protection_enabled: maxTradesEnabled,
         max_positions_protection_enabled: maxPositionsEnabled,
@@ -592,6 +603,7 @@ export function App() {
               sfeedStatus={summary?.connections?.sfeed?.status || 'DISCONNECTED'}
               telegramStatus={summary?.connections?.telegram?.status || 'DISCONNECTED'}
               newTradesPaused={summary?.metrics?.new_trades_paused || false}
+              marketOverview={marketOverview}
             >
               <Outlet />
             </AppShell>
@@ -600,15 +612,19 @@ export function App() {
           <Route path="dashboard" element={
             <DashboardOverview
               summary={summary}
+              marketOverview={marketOverview}
               activeTrades={trades.filter(t => ['WAITING_FOR_ENTRY', 'ENTRY_TRIGGERED', 'POSITION_OPEN', 'PARTIAL_PROFIT', 'Trailing Stop'].includes(t.status) || ['TRAILING_STOP'].includes(t.status))}
               positions={positions}
               riskConfig={riskConfig}
               onTradeClick={(t) => openTradeDetail(t.id)}
             />
           } />
-          <Route path="market" element={<MarketDataCard summary={summary} subscriptions={marketSubs} />} />
-          <Route path="controls" element={<OperationalControls summary={summary} refreshData={fetchSlowData} />} />
-          <Route path="system" element={<SystemHealthPage summary={summary} />} />
+          <Route path="market" element={<MarketDataCard 
+              summary={summary} marketOverview={marketOverview} subscriptions={marketSubs} />} />
+          <Route path="controls" element={<OperationalControls 
+              summary={summary} marketOverview={marketOverview} refreshData={fetchSlowData} />} />
+          <Route path="system" element={<SystemHealthPage 
+              summary={summary} marketOverview={marketOverview} />} />
           <Route path="audit" element={<AuditLogsPage />} />
           <Route path="signals" element={<SignalsTab signals={signals} />} />
           <Route path="trades" element={
@@ -696,3 +712,4 @@ export function App() {
     </>
   );
 }
+

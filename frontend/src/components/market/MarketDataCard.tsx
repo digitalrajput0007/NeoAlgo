@@ -77,7 +77,11 @@ export function MarketDataCard({ summary, subscriptions }: MarketDataCardProps) 
                   <TableBody>
                     {subscriptions.map(sub => (
                       <TableRow key={sub.instrument_token} hover sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
-                        <TableCell sx={{ fontWeight: 700 }}>{sub.pTrdSymbol || '—'}</TableCell>
+                        <TableCell sx={{ fontWeight: 700 }}>
+                          {sub.pSymbol 
+                            ? `${sub.pSymbol} ${sub.strike ? (sub.strike % 1 === 0 ? sub.strike : sub.strike.toString()) : ''} ${sub.option_type || ''}`.trim() 
+                            : (sub.pTrdSymbol || '—')}
+                        </TableCell>
                         <TableCell sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>{sub.instrument_token}</TableCell>
                         <TableCell align="right" sx={{ fontFamily: 'monospace', fontWeight: 700, bgcolor: 'warning.50' }}>
                           {(sub.latest_ltp ?? 0) > 0 ? `₹${(sub.latest_ltp ?? 0).toFixed(2)}` : '—'}

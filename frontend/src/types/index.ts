@@ -1,5 +1,6 @@
 export interface DashboardSummary {
   mode: string;
+  live_trading_enabled?: boolean;
   live_orders: string;
   connections: {
     telegram: {
@@ -37,6 +38,9 @@ export interface DashboardSummary {
     paper_session_id?: string | null;
     paper_reset_at?: string | null;
     new_trades_paused?: boolean;
+    win_rate?: number;
+    winning_trades?: number;
+    losing_trades?: number;
   };
 }
 
@@ -178,10 +182,13 @@ export interface PositionItem {
   id: number;
   trade_id: number;
   instrument: string;
+  instrument_token: string;
   quantity: number;
   average_entry: number;
   current_ltp: number | null;
   unrealized_pnl: number;
+  exit_price?: number | null;
+  realized_pnl?: number;
   is_open: boolean;
   state: string;
   created_at: string | null;
@@ -232,10 +239,14 @@ export interface BrokerStatus {
 }
 
 export interface BrokerFunds {
-  available_margin: number;
-  used_margin: number;
-  available_cash: number;
-  updated_at?: string;
+  broker: string;
+  connected: boolean;
+  available_margin: number | null;
+  used_margin: number | null;
+  available_cash: number | null;
+  collateral: number | null;
+  rms_pay_in: number | null;
+  last_updated?: string;
   error?: boolean;
   message?: string;
 }
@@ -253,6 +264,9 @@ export interface RiskConfig {
   entry_tolerance: number;
   quantity_mode: string;
   fixed_lots: number;
+  nifty_lot_size: number;
+  banknifty_lot_size: number;
+  sensex_lot_size: number;
   partial_profit_enabled: boolean;
   partial_profit_trigger: number;
   partial_profit_percentage: number;
@@ -276,6 +290,9 @@ export interface UpdateRiskConfigRequest {
   entry_tolerance?: number;
   quantity_mode?: string;
   fixed_lots?: number;
+  nifty_lot_size?: number;
+  banknifty_lot_size?: number;
+  sensex_lot_size?: number;
   partial_profit_enabled?: boolean;
   partial_profit_trigger?: number;
   partial_profit_percentage?: number;
@@ -359,4 +376,31 @@ export interface AnalyticsSummary {
 export interface DailyAnalytics {
   date: string;
   pnl: number;
+}
+
+export interface MarketOverviewTicker {
+  symbol: string;
+  ltp: number | null;
+  status: string;
+  resolved: boolean;
+}
+
+export interface MarketOverviewData {
+  market_status: string;
+  tickers: MarketOverviewTicker[];
+  system_health: {
+    kotak_api: string;
+    market_data_feed: string;
+    telegram_listener: string;
+    database: string;
+  };
+  kpis: {
+    today_pnl: number;
+    active_trades: number;
+  };
+}
+
+export interface TradingModeConfig {
+  mode: string;
+  live_trading_enabled: boolean;
 }

@@ -29,13 +29,14 @@ export function ActiveTradesTable({ trades, positions, onTradeClick }: ActiveTra
   }
 
   return (
-    <TableContainer component={Paper} elevation={1} sx={{ borderRadius: 2 }}>
-      <Table size="small">
+    <TableContainer component={Paper} elevation={1} sx={{ borderRadius: 2, maxHeight: 350, overflowY: 'auto' }}>
+      <Table size="small" stickyHeader>
         <TableHead sx={{ bgcolor: 'grey.50' }}>
           <TableRow>
             <TableCell sx={{ fontWeight: 600 }}>Trade</TableCell>
             <TableCell sx={{ fontWeight: 600 }}>Instrument</TableCell>
             <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
+            <TableCell align="right" sx={{ fontWeight: 600 }}>Qty</TableCell>
             <TableCell align="right" sx={{ fontWeight: 600 }}>Entry</TableCell>
             <TableCell align="right" sx={{ fontWeight: 700, color: 'warning.dark' }}>LTP</TableCell>
             <TableCell align="right" sx={{ fontWeight: 600, color: 'error.main' }}>SL</TableCell>
@@ -46,9 +47,9 @@ export function ActiveTradesTable({ trades, positions, onTradeClick }: ActiveTra
         </TableHead>
         <TableBody>
           {trades.map((trade) => {
-            const pos = positions.find(p => p.instrument === trade.instrument && p.quantity !== 0);
+            const pos = positions.find(p => p.instrument_token === trade.instrument && p.quantity !== 0);
             const unrealizedPnl = pos?.unrealized_pnl || 0;
-            const ltp = pos?.current_ltp || trade.actual_entry || 0;
+            const ltp = pos?.current_ltp || trade.current_ltp || trade.actual_entry || 0;
 
             return (
               <TableRow 
@@ -65,6 +66,9 @@ export function ActiveTradesTable({ trades, positions, onTradeClick }: ActiveTra
                 </TableCell>
                 <TableCell>
                   <StatusBadge status={trade.status} size="small" />
+                </TableCell>
+                <TableCell align="right" sx={{ fontFamily: 'monospace' }}>
+                  {trade.quantity || '-'}
                 </TableCell>
                 <TableCell align="right" sx={{ fontFamily: 'monospace' }}>
                   {trade.actual_entry ? `₹${trade.actual_entry.toFixed(2)}` : '—'}

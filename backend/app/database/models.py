@@ -60,6 +60,9 @@ class TradingSettings(Base):
     # Phase 12 Configs
     quantity_mode = Column(String, default="FIXED")
     fixed_lots = Column(Integer, default=1)
+    nifty_lot_size = Column(Integer, default=25)
+    banknifty_lot_size = Column(Integer, default=15)
+    sensex_lot_size = Column(Integer, default=20)
     
     # Phase 10E Configs
     partial_profit_enabled = Column(Boolean, default=False)
@@ -192,12 +195,28 @@ class Order(Base):
     __tablename__ = "orders"
     id = Column(Integer, primary_key=True, index=True)
     trade_id = Column(Integer, ForeignKey("trades.id"))
-    broker_order_id = Column(String, index=True)
-    order_type = Column(String) # BUY / SELL
+    execution_id = Column(String, index=True, nullable=True)
+    broker_order_id = Column(String, index=True, nullable=True)
+    broker_exchange_order_id = Column(String, nullable=True)
+    broker_tag = Column(String, nullable=True)
+    trading_symbol = Column(String, nullable=True)
+    exchange_segment = Column(String, nullable=True)
+    transaction_type = Column(String) # BUY / SELL
+    order_type = Column(String) # MKT / L / SL
+    product = Column(String)
+    validity = Column(String)
     quantity = Column(Integer)
-    price = Column(Float)
+    requested_price = Column(Float, nullable=True)
+    average_fill_price = Column(Float, nullable=True)
     status = Column(String)
+    rejection_reason = Column(String, nullable=True)
+    submitted_at = Column(DateTime(timezone=True), nullable=True)
+    acknowledged_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    filled_quantity = Column(Integer, default=0)
+    remaining_quantity = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
 class Position(Base):
     __tablename__ = "positions"

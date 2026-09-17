@@ -100,7 +100,7 @@ class MarketDataService:
     def register_trade_interest(
         self,
         token: str,
-        trade_id: int,
+        trade_id: Any,
         symbol: str = "",
         exchange_seg: str = "nse_fo",
         trading_symbol: str = "",
@@ -156,7 +156,7 @@ class MarketDataService:
             if expiry: sub["expiry"] = expiry
             logger.info(f"[MARKET_DATA] Registered trade #{trade_id} interest for token {tok} (ref count={len(sub['active_trade_ids'])})")
 
-    def release_trade_interest(self, token: str, trade_id: int):
+    def release_trade_interest(self, token: str, trade_id: Any):
         """
         Releases a trade's interest in an instrument token.
         Only unsubscribes from SFeed when reference count drops to zero.

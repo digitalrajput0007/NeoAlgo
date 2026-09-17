@@ -27,35 +27,30 @@ class BrokerService:
         response = await broker.get_broker_funds()
         
         if response.get("status") == "success":
-            data = response.get("data", [])
-            # Kotak typically returns a list of limits or a dict. 
-            # We'll normalize it here for our app UI.
-            
-            # Find the core margin object (often type 'ALL' or similar if it's a list)
+            data = response.get("data", {})
+            # We normalize it here for our app UI based on Kotak v3.0.6 Limits response schema
             normalized_funds = {
-                "available_margin": 0.0,
-                "used_margin": 0.0,
-                "available_cash": 0.0,
-                "raw_data": data,
-                "updated_at": datetime.now(timezone.utc).isoformat()
+                "available_margin": None,
+                "used_margin": None,
+                "cash": None,
+                "collateral": None,
+                "rms_pay_in": None,
+                "broker_fields": data,
+                "last_updated": datetime.now(timezone.utc).isoformat()
             }
             
             try:
-                # If it's a list of dictionaries (standard for Kotak limits)
-                if isinstance(data, list):
-                    for item in data:
-                        if isinstance(item, dict):
-                            normalized_funds["available_margin"] += float(item.get("Net", 0.0) or item.get("marginAvailable", 0.0) or 0.0)
-                            normalized_funds["used_margin"] += float(item.get("MarginUsed", 0.0) or item.get("marginUsed", 0.0) or 0.0)
-                            normalized_funds["available_cash"] += float(item.get("CollateralValue", 0.0) or item.get("cashAvailable", 0.0) or 0.0)
-                elif isinstance(data, dict):
-                    # In case it's a direct dictionary
-                    normalized_funds["available_margin"] = float(data.get("Net", 0.0) or data.get("marginAvailable", 0.0) or 0.0)
-                    normalized_funds["used_margin"] = float(data.get("MarginUsed", 0.0) or data.get("marginUsed", 0.0) or 0.0)
-                    normalized_funds["available_cash"] = float(data.get("CollateralValue", 0.0) or data.get("cashAvailable", 0.0) or 0.0)
+                if isinstance(data, dict):
+                    if "Net" in data:
+                        normalized_funds["available_margin"] = float(data["Net"] or 0.0)
+                    if "MarginUsed" in data:
+                        normalized_funds["used_margin"] = float(data["MarginUsed"] or 0.0)
+                    if "Collateral" in data:
+                        normalized_funds["collateral"] = float(data["Collateral"] or 0.0)
+                    if "RmsPayInAmt" in data:
+                        normalized_funds["rms_pay_in"] = float(data["RmsPayInAmt"] or 0.0)
             except Exception as e:
                 logger.error(f"Error parsing broker funds response: {e}")
-                # We will still cache the raw data and whatever we got
                 
             self._cached_funds = normalized_funds
             self._last_funds_fetch_time = current_time
@@ -69,10 +64,12 @@ class BrokerService:
             return {
                 "error": True,
                 "message": response.get("message", "Unknown error fetching broker funds"),
-                "available_margin": 0.0,
-                "used_margin": 0.0,
-                "available_cash": 0.0,
-                "updated_at": datetime.now(timezone.utc).isoformat()
+                "available_margin": None,
+                "used_margin": None,
+                "cash": None,
+                "collateral": None,
+                "rms_pay_in": None,
+                "last_updated": datetime.now(timezone.utc).isoformat()
             }
 
 broker_service = BrokerService()

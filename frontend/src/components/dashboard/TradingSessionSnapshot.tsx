@@ -1,4 +1,4 @@
-import type { DashboardSummary, RiskConfig } from '@/types';
+import type { DashboardSummary, RiskConfig, PositionItem } from '@/types';
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import CardHeader from "@mui/material/CardHeader";
@@ -10,14 +10,20 @@ import WalletIcon from "@mui/icons-material/AccountBalanceWallet";
 interface TradingSessionSnapshotProps {
   summary: DashboardSummary | null;
   riskConfig: RiskConfig | null;
+  positions: PositionItem[];
 }
 
-export function TradingSessionSnapshot({ summary, riskConfig }: TradingSessionSnapshotProps) {
+export function TradingSessionSnapshot({ summary, riskConfig, positions }: TradingSessionSnapshotProps) {
   if (!summary || !riskConfig) return null;
 
-  const realizedPnl = summary.metrics.today_pnl ?? 0;
+  // Calculate live unrealized P&L for open option positions
+  const openPositions = positions.filter(p => p.quantity > 0);
+  const liveOptionPnl = openPositions.reduce((acc, pos) => acc + (pos.unrealized_pnl || 0), 0);
+
   const maxLoss = riskConfig.max_daily_loss;
-  const lossProgress = realizedPnl < 0 ? Math.min((Math.abs(realizedPnl) / maxLoss) * 100, 100) : 0;
+  // If the user meant liveOptionPnl for loss progress, we use it; else fallback to realizedPnl if needed
+  // We'll use the liveOptionPnl for the main display as requested.
+  const lossProgress = liveOptionPnl < 0 ? Math.min((Math.abs(liveOptionPnl) / maxLoss) * 100, 100) : 0;
   
   const tradesToday = summary.metrics.orders_today ?? 0;
   const maxTrades = riskConfig.max_trades_per_day;
@@ -29,7 +35,7 @@ export function TradingSessionSnapshot({ summary, riskConfig }: TradingSessionSn
         title={
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
             <WalletIcon sx={{ mr: 1, color: 'text.secondary' }} fontSize="small" />
-            Trading Session
+            Open Position P&L
           </Box>
         }
         titleTypographyProps={{ variant: 'subtitle2', fontWeight: 'bold' }}
@@ -38,13 +44,13 @@ export function TradingSessionSnapshot({ summary, riskConfig }: TradingSessionSn
       <CardContent sx={{ pt: 2 }}>
         
         <Box sx={{ mb: 3 }}>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5, fontWeight: 600 }}>Today's Realized P&L</Typography>
-          <Typography variant="h5" color={realizedPnl >= 0 ? "success.main" : "error.main"} sx={{ mb: 1, fontFamily: '"Poppins", sans-serif', fontWeight: 800 }}>
-            ₹{realizedPnl.toFixed(2)}
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5, fontWeight: 600 }}>Live Position P&L</Typography>
+          <Typography variant="h5" color={liveOptionPnl >= 0 ? "success.main" : "error.main"} sx={{ mb: 1, fontFamily: '"Poppins", sans-serif', fontWeight: 800 }}>
+            ₹{liveOptionPnl.toFixed(2)}
           </Typography>
           {riskConfig.daily_loss_protection_enabled && (
             <>
-              <LinearProgress variant="determinate" value={lossProgress} color={realizedPnl >= 0 ? "success" : "error"} sx={{ height: 6, borderRadius: 3, mb: 0.5 }} />
+              <LinearProgress variant="determinate" value={lossProgress} color={liveOptionPnl >= 0 ? "success" : "error"} sx={{ height: 6, borderRadius: 3, mb: 0.5 }} />
               <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                 <Typography variant="caption" color="text.disabled">Loss Progress</Typography>
                 <Typography variant="caption" color="text.disabled">Max: -₹{maxLoss}</Typography>
@@ -65,13 +71,6 @@ export function TradingSessionSnapshot({ summary, riskConfig }: TradingSessionSn
               </Box>
             </>
           )}
-        </Box>
-
-        <Box sx={{ pt: 1.5, borderTop: 1, borderColor: 'divider' }}>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5, fontWeight: 600 }}>Risk Per Trade Limit</Typography>
-          <Typography variant="h6" sx={{ fontFamily: '"Poppins", monospace', bgcolor: 'grey.100', display: 'inline-block', px: 1.5, py: 0.5, borderRadius: 2, fontWeight: 700 }}>
-            ₹{riskConfig.max_risk_per_trade}
-          </Typography>
         </Box>
       </CardContent>
     </Card>

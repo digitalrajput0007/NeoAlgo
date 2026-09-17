@@ -51,10 +51,22 @@ async def get_kotak_orders() -> Dict[str, Any]:
     orders = await kotak_broker.get_orders()
     return {"orders": orders}
 
-@router.get("/kotak/funds")
-async def get_kotak_funds(refresh: bool = Query(False)) -> Dict[str, Any]:
-    if not kotak_broker.is_connected:
+@router.get("/account-limits")
+async def get_account_limits(refresh: bool = Query(False)) -> Dict[str, Any]:
+    """Returns the normalized account funds/limits for Kotak Neo."""
+    if kotak_broker.auth_status != "CONNECTED":
         await kotak_broker.authenticate()
         
     funds = await broker_service.get_cached_broker_funds(force_refresh=refresh)
-    return {"funds": funds}
+    
+    # Structure the response
+    return {
+        "broker": "kotak_neo",
+        "connected": kotak_broker.auth_status == "CONNECTED",
+        "available_cash": funds.get("cash"),
+        "available_margin": funds.get("available_margin"),
+        "used_margin": funds.get("used_margin"),
+        "collateral": funds.get("collateral"),
+        "rms_pay_in": funds.get("rms_pay_in"),
+        "last_updated": funds.get("last_updated")
+    }

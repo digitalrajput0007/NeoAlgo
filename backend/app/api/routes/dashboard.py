@@ -1,10 +1,10 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.future import select
-from sqlalchemy import func
+from sqlalchemy import func, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.database import get_db, AsyncSessionLocal
@@ -33,11 +33,28 @@ PROFILE_CACHE_TTL_SECONDS = 300.0  # 5 minutes
 
 _scrip_count_cache = {"scrip_count": 0, "nifty_count": 0, "cache_id": None}
 
-# Ensure market data service price listener updates active trades
+import asyncio
+
+_eval_tasks = {}
+_last_eval_time = {}
+
+# Ensure market data service price listener updates active trades with debouncing
 async def _handle_price_tick(token: str, ltp: float):
-    async with AsyncSessionLocal() as session:
-        manager = TradeManager(session, telegram_listener.paper_broker)
-        await manager.evaluate_market_prices(token, ltp)
+    now = time.time()
+    if now - _last_eval_time.get(token, 0) < 0.5: # 500ms debounce
+        return
+    _last_eval_time[token] = now
+    
+    async def task():
+        try:
+            async with AsyncSessionLocal() as session:
+                manager = TradeManager(session, telegram_listener.paper_broker)
+                await manager.evaluate_market_prices(token, ltp)
+        finally:
+            _eval_tasks.pop(token, None)
+            
+    if token not in _eval_tasks:
+        _eval_tasks[token] = asyncio.create_task(task())
 
 market_data_service.register_listener(_handle_price_tick)
 
@@ -133,6 +150,20 @@ async def get_dashboard_summary(db: AsyncSession = Depends(get_db)):
     current_session_signals = int(signals_res[0]) if signals_res and signals_res[0] is not None else 0
     signals_today = int(signals_res[1]) if signals_res and signals_res[1] is not None else 0
 
+    # Win Rate (last 30 days)
+    thirty_days_ago = now_utc - timedelta(days=30)
+    closed_states = [TradeState.CLOSED]
+    stmt_win_rate = select(
+        func.count(Trade.id),
+        func.sum(case((Trade.realized_pnl > 0, 1), else_=0))
+    ).where(Trade.status.in_(closed_states)).where(trade_time >= thirty_days_ago)
+    
+    win_rate_res = (await db.execute(stmt_win_rate)).one_or_none()
+    
+    total_closed = int(win_rate_res[0]) if win_rate_res and win_rate_res[0] else 0
+    profitable = int(win_rate_res[1]) if win_rate_res and win_rate_res[1] else 0
+    win_rate = (profitable / total_closed * 100) if total_closed > 0 else 0.0
+
     # 2. Connection states
     tel_status = await telegram_listener.get_status()
     kotak_connected = kotak_broker.auth_status == "CONNECTED"
@@ -141,12 +172,15 @@ async def get_dashboard_summary(db: AsyncSession = Depends(get_db)):
     # DB connectivity verified from successful queries above
     db_connected = True
 
+    print(f"DASHBOARD RETURNING SFEED STATUS: {sfeed_status}")
+
     sel_ch = tel_status.get("selected_channel")
     channel_display = f"{sel_ch['channel_name']}" if sel_ch else "NONE"
 
     return {
-        "mode": "PAPER",
-        "live_orders": "DISABLED",
+        "mode": settings.neoalgo_mode,
+        "live_trading_enabled": getattr(settings, "live_trading_enabled", False),
+        "live_orders": "ENABLED" if (settings.neoalgo_mode == "LIVE" and getattr(settings, "live_trading_enabled", False)) else "DISABLED",
         "connections": {
             "telegram": {
                 "status": tel_status.get("listener_status", "DISCONNECTED"),
@@ -181,7 +215,10 @@ async def get_dashboard_summary(db: AsyncSession = Depends(get_db)):
             "current_session_orders": int(current_session_orders),
             "historical_orders_today": int(historical_orders_today),
             "paper_session_id": session_id,
-            "paper_reset_at": to_utc_iso(session_start)
+            "paper_reset_at": to_utc_iso(session_start),
+            "win_rate": float(win_rate),
+            "winning_trades": int(profitable),
+            "losing_trades": int(total_closed - profitable)
         }
     }
 
@@ -636,7 +673,10 @@ async def get_positions(
     - scope='history': Returns closed / reset positions (is_open == False).
     - scope='all': Returns all positions.
     """
-    stmt = select(Position, Trade).outerjoin(Trade, Position.trade_id == Trade.id).order_by(Position.id.desc())
+    stmt = select(Position, Trade, Signal)\
+        .outerjoin(Trade, Position.trade_id == Trade.id)\
+        .outerjoin(Signal, Trade.signal_id == Signal.id)\
+        .order_by(Position.id.desc())
 
     if scope == "history":
         stmt = stmt.where(Position.is_open == False)
@@ -649,9 +689,9 @@ async def get_positions(
     rows = res.all()
     
     positions = []
-    for pos, trade in rows:
+    for pos, trade, sig in rows:
         sub = market_data_service.subscriptions.get(pos.instrument_token)
-        ltp = sub.get("latest_ltp") if sub else pos.average_price
+        ltp = sub.get("latest_ltp") if (sub and sub.get("latest_ltp") is not None) else pos.average_price
         
         # Calculate unrealized PNL
         unrealized_pnl = 0.0
@@ -664,14 +704,22 @@ async def get_positions(
         elif pos.is_open:
             trade_status = "OPEN"
 
+        instrument_name = pos.instrument_token
+        if sig and sig.underlying and sig.strike and sig.option_type:
+            strike_str = str(int(sig.strike)) if sig.strike % 1 == 0 else str(sig.strike)
+            instrument_name = f"{sig.underlying} {strike_str} {sig.option_type}"
+
         positions.append({
             "id": pos.id,
             "trade_id": pos.trade_id,
-            "instrument": pos.instrument_token,
-            "quantity": pos.quantity,
-            "average_entry": pos.average_price,
+            "instrument": instrument_name,
+            "instrument_token": pos.instrument_token,
+            "quantity": trade.quantity if trade and getattr(trade, 'quantity', 0) > 0 else pos.quantity,
+            "average_entry": trade.entry_price if trade and getattr(trade, 'entry_price', None) else pos.average_price,
             "current_ltp": ltp,
             "unrealized_pnl": round(unrealized_pnl, 2),
+            "exit_price": trade.exit_price if trade else None,
+            "realized_pnl": trade.realized_pnl if trade else 0.0,
             "is_open": pos.is_open,
             "state": trade_status,
             "created_at": to_utc_iso(pos.created_at)
@@ -728,7 +776,7 @@ async def get_orders(
             "broker_order_id": o.broker_order_id,
             "order_type": o.order_type,
             "quantity": o.quantity,
-            "price": o.price,
+            "price": o.average_fill_price if o.average_fill_price else o.requested_price,
             "status": o.status,
             "execution_type": "PAPER ORDER",
             "is_paper": True,
@@ -824,6 +872,9 @@ class RiskConfigResponse(BaseModel):
     is_algo_active: bool
     entry_timeout_minutes: int
     entry_tolerance: float
+    nifty_lot_size: int
+    banknifty_lot_size: int
+    sensex_lot_size: int
     partial_profit_enabled: bool
     partial_profit_trigger: float
     partial_profit_percentage: float
@@ -853,6 +904,9 @@ class UpdateRiskConfigRequest(BaseModel):
     
     quantity_mode: Optional[str] = "FIXED"
     fixed_lots: Optional[int] = 1
+    nifty_lot_size: Optional[int] = 25
+    banknifty_lot_size: Optional[int] = 15
+    sensex_lot_size: Optional[int] = 20
     
     partial_profit_enabled: Optional[bool] = False
     partial_profit_trigger: Optional[float] = 10.00
@@ -884,6 +938,9 @@ async def get_risk_config(db: AsyncSession = Depends(get_db)):
             entry_tolerance=1.0,
             quantity_mode="FIXED",
             fixed_lots=1,
+            nifty_lot_size=25,
+            banknifty_lot_size=15,
+            sensex_lot_size=20,
             partial_profit_enabled=False,
             partial_profit_trigger=10.0,
             partial_profit_percentage=50.0,
@@ -909,6 +966,9 @@ async def get_risk_config(db: AsyncSession = Depends(get_db)):
         "entry_tolerance": float(settings.entry_tolerance if getattr(settings, "entry_tolerance", None) is not None else 1.0),
         "quantity_mode": str(getattr(settings, "quantity_mode", None) or "FIXED"),
         "fixed_lots": int(getattr(settings, "fixed_lots", None) or 1),
+        "nifty_lot_size": int(getattr(settings, "nifty_lot_size", None) or 25),
+        "banknifty_lot_size": int(getattr(settings, "banknifty_lot_size", None) or 15),
+        "sensex_lot_size": int(getattr(settings, "sensex_lot_size", None) or 20),
         "partial_profit_enabled": bool(getattr(settings, "partial_profit_enabled", False)),
         "partial_profit_trigger": float(getattr(settings, "partial_profit_trigger", 10.0)),
         "partial_profit_percentage": float(getattr(settings, "partial_profit_percentage", 50.0)),
@@ -964,6 +1024,9 @@ async def update_risk_config(req: UpdateRiskConfigRequest, db: AsyncSession = De
     settings.entry_tolerance = float(entry_tolerance)
     settings.quantity_mode = str(req.quantity_mode) if req.quantity_mode else "FIXED"
     settings.fixed_lots = int(req.fixed_lots) if req.fixed_lots else 1
+    settings.nifty_lot_size = int(req.nifty_lot_size) if req.nifty_lot_size else 25
+    settings.banknifty_lot_size = int(req.banknifty_lot_size) if req.banknifty_lot_size else 15
+    settings.sensex_lot_size = int(req.sensex_lot_size) if req.sensex_lot_size else 20
     settings.partial_profit_enabled = bool(req.partial_profit_enabled)
     settings.partial_profit_trigger = float(req.partial_profit_trigger)
     settings.partial_profit_percentage = float(req.partial_profit_percentage)
@@ -985,6 +1048,9 @@ async def update_risk_config(req: UpdateRiskConfigRequest, db: AsyncSession = De
             "entry_tolerance": float(entry_tolerance),
             "quantity_mode": req.quantity_mode,
             "fixed_lots": req.fixed_lots,
+            "nifty_lot_size": req.nifty_lot_size,
+            "banknifty_lot_size": req.banknifty_lot_size,
+            "sensex_lot_size": req.sensex_lot_size,
             "daily_loss_protection_enabled": req.daily_loss_protection_enabled,
             "max_trades_protection_enabled": req.max_trades_protection_enabled,
             "max_positions_protection_enabled": req.max_positions_protection_enabled,
@@ -1016,6 +1082,11 @@ async def update_risk_config(req: UpdateRiskConfigRequest, db: AsyncSession = De
             "is_algo_active": bool(settings.is_algo_active),
             "entry_timeout_minutes": int(settings.entry_timeout_minutes if settings.entry_timeout_minutes is not None else 15),
             "entry_tolerance": float(settings.entry_tolerance if getattr(settings, "entry_tolerance", None) is not None else 1.0),
+            "quantity_mode": str(settings.quantity_mode),
+            "fixed_lots": int(settings.fixed_lots),
+            "nifty_lot_size": int(settings.nifty_lot_size),
+            "banknifty_lot_size": int(settings.banknifty_lot_size),
+            "sensex_lot_size": int(settings.sensex_lot_size),
             "partial_profit_enabled": bool(settings.partial_profit_enabled),
             "partial_profit_trigger": float(settings.partial_profit_trigger),
             "partial_profit_percentage": float(settings.partial_profit_percentage),
@@ -1389,4 +1460,119 @@ async def reset_paper_state(db: AsyncSession = Depends(get_db)):
         "live_broker_positions_touched": 0,
         "live_orders": "DISABLED"
     }
+
+# =========================================================================
+# 13. MARKET OVERVIEW & DASHBOARD TERMINAL
+# =========================================================================
+from app.utils.market_status import get_market_status
+
+@router.get("/dashboard/market-overview")
+async def get_dashboard_market_overview(db: AsyncSession = Depends(get_db)):
+    """
+    Consolidated live market overview for Dashboard Phase 13C.
+    Returns:
+      - Live Indian Market Status
+      - Live Tickers (NIFTY 50, BANK NIFTY, FINNIFTY, MIDCPNIFTY)
+      - High-level KPIs (Today P&L, Active Trades, Open Signals)
+      - System Health checks
+    """
+    # 1. Market Status
+    status = get_market_status()
+    
+    # 2. Resolve Indices and Subscribe to Dashboard
+    indices = [
+        {"symbol": "NIFTY 50", "display": "NIFTY 50"},
+        {"symbol": "BANK NIFTY", "display": "BANK NIFTY"},
+    ]
+    
+    tickers = []
+    
+    for idx in indices:
+        try:
+            # We reuse the telegram listener's resolver which is already initialized
+            res = await telegram_listener.resolver.resolve_index(idx["symbol"])
+            if res:
+                token = res["instrument_token"]
+                
+                # Register dashboard interest (ref-counting)
+                market_data_service.register_trade_interest(
+                    token=token,
+                    trade_id="dashboard", # Special static ID for dashboard
+                    symbol=res.get("symbol"),
+                    exchange_seg=res.get("exchange_segment")
+                )
+                
+                sub = market_data_service.subscriptions.get(token)
+                ltp = sub.get("latest_ltp") if sub else None
+                is_stale = sub.get("is_stale", True) if sub else True
+                
+                tickers.append({
+                    "symbol": idx["display"],
+                    "ltp": ltp,
+                    "status": "LIVE" if (ltp and not is_stale) else "STALE",
+                    "resolved": True
+                })
+            else:
+                tickers.append({
+                    "symbol": idx["display"],
+                    "ltp": None,
+                    "status": "Data Unavailable",
+                    "resolved": False
+                })
+        except Exception as e:
+            tickers.append({
+                "symbol": idx["display"],
+                "ltp": None,
+                "status": "Data Unavailable",
+                "resolved": False
+            })
+            
+    # 3. System Health
+    tel_status = await telegram_listener.get_status()
+    sfeed_status = market_data_service.get_status()
+    
+    system_health = {
+        "kotak_api": "CONNECTED" if kotak_broker.auth_status == "CONNECTED" else "DISCONNECTED",
+        "market_data_feed": sfeed_status["feed_status"],
+        "telegram_listener": tel_status.get("listener_status", "DISCONNECTED"),
+        "database": "CONNECTED", # if this endpoint is running, DB is typically ok
+    }
+    
+    # 4. Fetch KPIs 
+    now_utc = datetime.now(timezone.utc)
+    today_start = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    stmt_broker = select(BrokerAccount).where(BrokerAccount.is_paper_trading == True).limit(1)
+    paper_broker_acc = (await db.execute(stmt_broker)).scalar_one_or_none()
+    
+    session_start = paper_broker_acc.paper_reset_at if paper_broker_acc else None
+    
+    active_states = [TradeState.WAITING_FOR_ENTRY, TradeState.ENTRY_TRIGGERED, TradeState.POSITION_OPEN, TradeState.PARTIAL_PROFIT, TradeState.TRAILING_STOP]
+    trade_time = func.coalesce(Trade.updated_at, Trade.created_at)
+    
+    if session_start:
+        stmt_trades = select(
+            func.count(Trade.id).filter(Trade.status.in_(active_states)),
+            func.sum(Trade.realized_pnl).filter(trade_time >= session_start)
+        )
+    else:
+        stmt_trades = select(
+            func.count(Trade.id).filter(Trade.status.in_(active_states)),
+            func.sum(Trade.realized_pnl).filter(trade_time >= today_start)
+        )
+        
+    trades_res = (await db.execute(stmt_trades)).one_or_none()
+    active_trades = int(trades_res[0]) if trades_res and trades_res[0] is not None else 0
+    today_pnl = float(trades_res[1] or 0.0) if trades_res else 0.0
+
+    return {
+        "market_status": status,
+        "tickers": tickers,
+        "system_health": system_health,
+        "kpis": {
+            "today_pnl": today_pnl,
+            "active_trades": active_trades
+        }
+    }
+
 

@@ -1,6 +1,6 @@
 import logging
 import math
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from datetime import datetime, timezone, timedelta
@@ -9,6 +9,7 @@ from decimal import Decimal
 from app.database.models import Trade, TradeState, Signal, AuditLog, Order, Position, TradingSettings, TelegramMessage, TradeEvent
 from app.telegram.models import TradeSignal, TelegramMessageType, ParseResult
 from app.brokers.base import BrokerInterface
+from app.brokers.execution_manager import ExecutionBroker
 from app.trading.risk_manager import RiskManager
 
 logger = logging.getLogger(__name__)
@@ -16,7 +17,12 @@ logger = logging.getLogger(__name__)
 class TradeManager:
     def __init__(self, db: AsyncSession, broker: BrokerInterface):
         self.db = db
-        self.broker = broker
+        # Wrap the incoming (paper) broker in ExecutionBroker to route dynamically
+        from app.brokers.kotak_neo import get_kotak_broker
+        self.broker = ExecutionBroker(
+            paper_broker=broker,
+            live_broker=get_kotak_broker()
+        )
         self.risk_manager = RiskManager(db)
 
     async def _log_trade_event(self, trade_id: int, event_type: str, price: Optional[float] = None, quantity: Optional[int] = None, metadata: Optional[dict] = None):
@@ -39,9 +45,9 @@ class TradeManager:
         self.db.add(log)
         logger.info(f"[AUDIT] {action}: {details}")
 
-    async def get_instrument_token(self, underlying: str, strike: int, option_type: str, expiry: str) -> str:
+    async def get_instrument_token(self, underlying: str, strike: int, option_type: str, expiry: str) -> Tuple[str, int]:
         res = await self.broker.resolve_option_contract(underlying, strike, option_type, expiry)
-        return str(res.get("pSymbol") or res.get("instrument_token"))
+        return str(res.get("pSymbol") or res.get("instrument_token")), int(res.get("lot_size", 75))
 
     async def is_duplicate_message(self, message_id: str, channel_id: str) -> bool:
         stmt = select(TelegramMessage).where(
@@ -69,31 +75,47 @@ class TradeManager:
         broker_account_id: int,
         signal_data: TradeSignal,
         message_id: str,
-        resolved_token: Optional[str] = None
+        resolved_token: Optional[str] = None,
+        resolved_lot_size: Optional[int] = None
     ) -> Trade:
         """Process a validated NEW_SIGNAL into a Trade."""
         
+        lot_size = resolved_lot_size
         # Determine instrument token first
         if resolved_token:
             instrument_token = str(resolved_token)
         else:
-            instrument_token = await self.get_instrument_token(
+            instrument_token, lot_size_api = await self.get_instrument_token(
                 signal_data.underlying, 
                 signal_data.strike, 
                 signal_data.option_type, 
                 signal_data.expiry.isoformat() if signal_data.expiry else None
             )
+            if not lot_size:
+                lot_size = lot_size_api
 
-        # Resolve contract lot size for risk sizing
-        lot_size = 75
-        try:
-            from app.services.market_data_service import market_data_service
-            sub_info = market_data_service.subscriptions.get(instrument_token, {})
-            lot_size = int(sub_info.get("lot_size", 75)) or 75
-        except Exception:
-            pass
+        # Resolve contract lot size for risk sizing if still missing
+        if not lot_size:
+            lot_size = 75
+            try:
+                from app.services.market_data_service import market_data_service
+                sub_info = market_data_service.subscriptions.get(instrument_token, {})
+                lot_size = int(sub_info.get("lot_size", 75)) or 75
+            except Exception:
+                pass
 
         active_settings = await self.risk_manager.get_active_settings(user_id)
+        
+        # Override lot size based on active settings and underlying instrument
+        if active_settings:
+            underlying = signal_data.underlying.upper() if signal_data.underlying else ""
+            if underlying == "NIFTY":
+                lot_size = getattr(active_settings, "nifty_lot_size", 25) or 25
+            elif underlying == "BANKNIFTY":
+                lot_size = getattr(active_settings, "banknifty_lot_size", 15) or 15
+            elif underlying == "SENSEX" or underlying == "BANKEX":
+                lot_size = getattr(active_settings, "sensex_lot_size", 20) or 20
+
         is_allowed = True
         reason = None
         
@@ -212,6 +234,22 @@ class TradeManager:
                 "evaluated_at": datetime.now(timezone.utc).isoformat()
             }
 
+        # Signal Superseding (Cancel existing WAITING_FOR_ENTRY for same instrument)
+        # To avoid double entries if a new signal arrives
+        if instrument_token:
+            stmt = select(Trade).where(
+                Trade.user_id == user_id,
+                Trade.instrument_token == instrument_token,
+                Trade.status == TradeState.WAITING_FOR_ENTRY
+            )
+            existing_trades = (await self.db.execute(stmt)).scalars().all()
+            for old_trade in existing_trades:
+                old_trade.status = TradeState.CANCELLED
+                await self._log_trade_event(old_trade.id, "SUPERSEDED_BY_NEW_SIGNAL")
+                await self._log_audit(user_id, old_trade.id, "TRADE_CANCELLED", {"reason": "Superseded by new signal"})
+            if existing_trades:
+                await self.db.flush()
+
         # Create Signal DB record
         db_signal = Signal(
             message_id=message_id,
@@ -293,26 +331,47 @@ class TradeManager:
         await self.db.commit()
         return trade
 
-    async def _place_paper_order(self, trade: Trade, side: str, quantity: int, price: float):
+    async def _place_broker_order(self, trade: Trade, side: str, quantity: int, price: float, execution_id: str = None):
+        if not execution_id:
+            import uuid
+            execution_id = f"EXEC_{uuid.uuid4().hex[:8]}"
+
         order_params = {
             "instrument_token": trade.instrument_token,
             "transaction_type": side,
             "quantity": quantity,
             "price": price,
-            "order_type": "MARKET"
+            "order_type": "MARKET",
+            "execution_id": execution_id,
+            "trade_id": trade.id
         }
+        
+        # Check idempotency: Ensure this execution hasn't been placed already
+        existing_order = await self.db.execute(select(Order).where(Order.execution_id == execution_id))
+        existing_order = existing_order.scalar_one_or_none()
+        if existing_order:
+            logger.warning(f"Order for execution {execution_id} already exists. Skipping placement.")
+            return existing_order
+            
         broker_order = await self.broker.place_order(order_params)
         
         db_order = Order(
             trade_id=trade.id,
-            broker_order_id=broker_order["order_id"],
+            execution_id=execution_id,
+            broker_order_id=broker_order.get("order_id"),
+            broker_tag=broker_order.get("order_tag"),
+            transaction_type=side,
             order_type=side,
             quantity=quantity,
-            price=broker_order["price"],
-            status=broker_order["status"]
+            requested_price=price,
+            average_fill_price=broker_order.get("price"),
+            status=broker_order.get("status", "PENDING"),
+            filled_quantity=broker_order.get("filled_quantity", quantity if broker_order.get("status") == "FILLED" else 0),
+            remaining_quantity=broker_order.get("remaining_quantity", 0 if broker_order.get("status") == "FILLED" else quantity),
         )
         self.db.add(db_order)
-        await self.db.flush()
+        await self.db.commit()
+        await self.db.refresh(db_order)
         
         await self._log_trade_event(trade.id, "ENTRY_ORDER_CREATED", price=price, quantity=quantity, metadata={"order_id": db_order.broker_order_id, "side": side})
         await self._log_audit(trade.user_id, trade.id, "ORDER_CREATED", {"side": side, "quantity": quantity, "price": price})
@@ -340,7 +399,7 @@ class TradeManager:
                 position.quantity += quantity
                 position.is_open = position.quantity > 0
                 
-            trade.quantity += quantity
+            trade.quantity = position.quantity
             trade.entry_price = price
             
             await self._log_trade_event(trade.id, "POSITION_OPENED", price=price, quantity=quantity)
@@ -453,9 +512,8 @@ class TradeManager:
                     trade.actual_triggered_at = datetime.now(timezone.utc)
                     await self._log_trade_event(trade.id, "ENTRY_TRIGGERED", price=ltp)
                     # Create Entry Order (Paper)
-                    sub = market_data_service.subscriptions.get(instrument_token, {})
-                    qty = int(sub.get("lot_size", 75)) or 75
-                    await self._place_paper_order(trade, "BUY", qty, ltp)
+                    qty = trade.quantity
+                    await self._place_broker_order(trade, "BUY", qty, ltp)
                     await self._update_position(trade, "BUY", qty, ltp)
                     
                     trade.status = TradeState.POSITION_OPEN
@@ -469,7 +527,7 @@ class TradeManager:
 
                 # 1. Hard Stop Loss
                 if ltp <= signal.stop_loss:
-                    broker_order = await self._place_paper_order(trade, "SELL", qty, ltp)
+                    broker_order = await self._place_broker_order(trade, "SELL", qty, ltp)
                     await self._update_position(trade, "SELL", qty, ltp)
                     trade.status = TradeState.CLOSED
                     trade.exit_triggered_at = datetime.now(timezone.utc)
@@ -484,7 +542,7 @@ class TradeManager:
                     
                 # 2. Trailing Stop
                 elif trade.trailing_active and trade.trailing_stop is not None and ltp <= trade.trailing_stop:
-                    broker_order = await self._place_paper_order(trade, "SELL", qty, ltp)
+                    broker_order = await self._place_broker_order(trade, "SELL", qty, ltp)
                     await self._update_position(trade, "SELL", qty, ltp)
                     trade.status = TradeState.CLOSED
                     trade.exit_triggered_at = datetime.now(timezone.utc)
@@ -506,7 +564,7 @@ class TradeManager:
                     # Prevent exiting more than we have
                     qty_to_exit = min(qty_to_exit, qty)
                     
-                    broker_order = await self._place_paper_order(trade, "SELL", qty_to_exit, ltp)
+                    broker_order = await self._place_broker_order(trade, "SELL", qty_to_exit, ltp)
                     await self._update_position(trade, "SELL", qty_to_exit, ltp)
                     
                     trade.partial_profit_taken = True
@@ -530,7 +588,7 @@ class TradeManager:
 
                 # 4. Target
                 elif ltp >= signal.target:
-                    broker_order = await self._place_paper_order(trade, "SELL", trade.quantity, ltp)
+                    broker_order = await self._place_broker_order(trade, "SELL", trade.quantity, ltp)
                     await self._update_position(trade, "SELL", trade.quantity, ltp)
                     
                     trade.status = TradeState.CLOSED
@@ -620,7 +678,7 @@ class TradeManager:
             qty = trade.quantity
             broker_order = None
             if qty > 0:
-                broker_order = await self._place_paper_order(trade, "SELL", qty, ltp)
+                broker_order = await self._place_broker_order(trade, "SELL", qty, ltp)
                 await self._update_position(trade, "SELL", qty, ltp)
             trade.status = TradeState.CLOSED
             reason = "TELEGRAM_EXIT" if message_type == TelegramMessageType.EXIT else "TELEGRAM_SL_HIT"
@@ -639,7 +697,7 @@ class TradeManager:
                 qty_to_exit = min(qty_to_exit, trade.quantity)
                 
                 if qty_to_exit > 0:
-                    broker_order = await self._place_paper_order(trade, "SELL", qty_to_exit, ltp)
+                    broker_order = await self._place_broker_order(trade, "SELL", qty_to_exit, ltp)
                     await self._update_position(trade, "SELL", qty_to_exit, ltp)
                     trade.partial_profit_taken = True
                     trade.partial_profit_quantity = qty_to_exit
@@ -706,7 +764,7 @@ class TradeManager:
             if trade.quantity > 0:
                 try:
                     old_qty = trade.quantity
-                    broker_order = await self._place_paper_order(trade, "SELL", trade.quantity, ltp)
+                    broker_order = await self._place_broker_order(trade, "SELL", trade.quantity, ltp)
                     await self._update_position(trade, "SELL", trade.quantity, ltp)
                     trade.status = TradeState.CLOSED
                     trade.exit_triggered_at = datetime.now(timezone.utc)
