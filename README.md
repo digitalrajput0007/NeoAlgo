@@ -12,12 +12,50 @@ A production-quality automated trading platform that reads trading signals from 
 ### Environment Variables
 Copy `.env.example` to `.env` and fill in your details.
 
-### Running with Docker (Recommended)
+### Running with Docker (Development)
 ```bash
-docker-compose up --build
+docker-compose -f docker-compose.dev.yml up --build
 ```
-* Backend API: http://localhost:8000
-* Frontend Dashboard: http://localhost:5173
+*(Note: A separate development compose file would be needed for local dev bind mounts. By default `docker-compose.yml` is production-ready).*
+
+## Production Deployment
+
+This repository is configured for production deployment on a single AWS EC2 server using Docker Compose.
+
+**Important:** The application defaults to PAPER mode. Live trading cannot be enabled without explicit configuration and server-side safety checks.
+
+### Production Build & Start
+```bash
+# Build images
+docker compose build
+
+# Start services in the background
+docker compose up -d
+```
+
+### Production Operations
+```bash
+# Check status
+docker compose ps
+
+# View backend logs
+docker compose logs -f backend
+
+# Run database migrations
+docker compose exec backend alembic upgrade head
+
+# Stop services
+docker compose down
+
+# Restart services
+docker compose restart
+```
+
+### Validation
+- **Frontend Health**: Visit `http://<your-server-ip>/`
+- **Backend Health**: Visit `http://<your-server-ip>/api/health`
+- **Database**: Ensure PostgreSQL data persists across restarts (volume `postgres_data`).
+- **Mode**: Verify that the dashboard shows "PAPER" mode and "Live Order Count" is 0.
 
 ### Local Development - Backend
 ```bash

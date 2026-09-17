@@ -11,3 +11,21 @@ frontend/node_modules/
 backend/.venv/
 backend/venv/
 backend/__pycache__/
+
+# Database artifacts
+*.db
+*.sqlite3
+
+# Sessions and credentials
+*.session
+*.session-journal
+*.pem
+private_keys/
+
+# Scratch and diagnostics
+out.txt
+backend/scratch/
+backend/scripts/
+backend/python/
+backend/pydantic-core/
+

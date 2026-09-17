@@ -43,14 +43,14 @@ export function DashboardOverview({
       {summary?.mode === 'LIVE' && summary?.live_trading_enabled ? (
         <Box sx={{ mb: 1.5, p: 1.5, bgcolor: 'error.main', color: 'error.contrastText', borderRadius: 1, display: 'flex', alignItems: 'center' }}>
           <ShieldCheckIcon sx={{ mr: 1 }} />
-          <Typography variant="subtitle1" fontWeight="bold">
+          <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
             LIVE TRADING ENABLED - REAL ORDERS WILL BE PLACED
           </Typography>
         </Box>
       ) : (
         <Box sx={{ mb: 1.5, p: 0.75, px: 1.5, bgcolor: 'info.main', color: 'info.contrastText', borderRadius: 1, display: 'inline-flex', alignItems: 'center' }}>
           <ShieldCheckIcon sx={{ mr: 1 }} fontSize="small" />
-          <Typography variant="body2" fontWeight="bold">
+          <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
             PAPER TRADING - SAFE MODE
           </Typography>
         </Box>
@@ -158,25 +158,25 @@ export function DashboardOverview({
             <CardContent>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                 <Typography variant="body2" color="text.secondary">Kotak API</Typography>
-                <Typography variant="body2" fontWeight="bold" color={marketOverview?.system_health?.kotak_api === 'CONNECTED' ? 'success.main' : 'error.main'}>
+                <Typography variant="body2" sx={{ fontWeight: 'bold' }} color={marketOverview?.system_health?.kotak_api === 'CONNECTED' ? 'success.main' : 'error.main'}>
                   {marketOverview?.system_health?.kotak_api || 'UNKNOWN'}
                 </Typography>
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                 <Typography variant="body2" color="text.secondary">Market Data Feed</Typography>
-                <Typography variant="body2" fontWeight="bold" color={marketOverview?.system_health?.market_data_feed === 'CONNECTED' ? 'success.main' : 'error.main'}>
+                <Typography variant="body2" sx={{ fontWeight: 'bold' }} color={marketOverview?.system_health?.market_data_feed === 'CONNECTED' ? 'success.main' : 'error.main'}>
                   {marketOverview?.system_health?.market_data_feed || 'UNKNOWN'}
                 </Typography>
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                 <Typography variant="body2" color="text.secondary">Telegram Listener</Typography>
-                <Typography variant="body2" fontWeight="bold" color={marketOverview?.system_health?.telegram_listener === 'LISTENING' ? 'success.main' : 'warning.main'}>
+                <Typography variant="body2" sx={{ fontWeight: 'bold' }} color={marketOverview?.system_health?.telegram_listener === 'LISTENING' ? 'success.main' : 'warning.main'}>
                   {marketOverview?.system_health?.telegram_listener || 'UNKNOWN'}
                 </Typography>
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                 <Typography variant="body2" color="text.secondary">Database</Typography>
-                <Typography variant="body2" fontWeight="bold" color={marketOverview?.system_health?.database === 'CONNECTED' ? 'success.main' : 'error.main'}>
+                <Typography variant="body2" sx={{ fontWeight: 'bold' }} color={marketOverview?.system_health?.database === 'CONNECTED' ? 'success.main' : 'error.main'}>
                   {marketOverview?.system_health?.database || 'UNKNOWN'}
                 </Typography>
               </Box>

@@ -620,11 +620,11 @@ export function App() {
             />
           } />
           <Route path="market" element={<MarketDataCard 
-              summary={summary} marketOverview={marketOverview} subscriptions={marketSubs} />} />
+              summary={summary} subscriptions={marketSubs} />} />
           <Route path="controls" element={<OperationalControls 
-              summary={summary} marketOverview={marketOverview} refreshData={fetchSlowData} />} />
+              summary={summary} refreshData={fetchSlowData} />} />
           <Route path="system" element={<SystemHealthPage 
-              summary={summary} marketOverview={marketOverview} />} />
+              summary={summary} />} />
           <Route path="audit" element={<AuditLogsPage />} />
           <Route path="signals" element={<SignalsTab signals={signals} />} />
           <Route path="trades" element={
