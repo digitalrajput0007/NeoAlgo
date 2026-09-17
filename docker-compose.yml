@@ -1,4 +1,3 @@
-version: '3.8'
 
 services:
   db:
@@ -23,6 +22,7 @@ services:
       - .env
     environment:
       # Force environment variables just in case
+      - APP_ENV=production
       - NEOALGO_ENV=production
       - NEOALGO_MODE=PAPER
       - LIVE_TRADING_ENABLED=false
