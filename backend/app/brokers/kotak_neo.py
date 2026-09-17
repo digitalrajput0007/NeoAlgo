@@ -103,84 +103,76 @@ class KotakNeoBroker(BrokerInterface):
                 return False
 
         try:
+            from neo_api_client.neo_api import NeoAPI
+            
+            # Use official Kotak Neo SDK
+            client = NeoAPI(
+                consumer_key=self.consumer_key,
+                environment="prod"
+            )
+            
             # Step 1: Login using TOTP to generate view token (session token)
-            async with httpx.AsyncClient() as client:
-                headers = {
-                    "Authorization": self.consumer_key,
-                    "neo-fin-key": "neotradeapi",
-                    "Content-Type": "application/json"
-                }
-                payload = {
-                    "mobileNumber": self.mobile,
-                    "ucc": self.ucc,
-                    "totp": current_totp
-                }
+            login_response = client.totp_login(
+                mobile_number=self.mobile,
+                ucc=self.ucc,
+                totp=current_totp
+            )
+            
+            if not login_response or (isinstance(login_response, dict) and login_response.get("stat") != "Ok"):
+                err_msg = ""
+                if isinstance(login_response, dict):
+                    err_json = login_response.get("error", [{}])
+                    if isinstance(err_json, list) and len(err_json) > 0:
+                        err_msg = str(err_json[0].get("message", ""))
+                    elif "message" in login_response:
+                        err_msg = str(login_response.get("message"))
+                logger.error(f"AUTHENTICATION_BLOCKED: Step 1 (TOTP) Login failed: {err_msg or 'Invalid credentials or TOTP'}")
+                self.auth_status = "AUTHENTICATION_BLOCKED"
+                return False
                 
-                response = await client.post(f"{self.login_base_url}/login/1.0/tradeApiLogin", headers=headers, json=payload)
-                if response.status_code != 200:
-                    err_msg = ""
-                    try:
-                        err_json = response.json()
-                        if isinstance(err_json, dict) and "error" in err_json:
-                            err_msg = str(err_json["error"])
-                        elif isinstance(err_json, dict) and "message" in err_json:
-                            err_msg = str(err_json["message"])
-                    except Exception:
-                        pass
-                    logger.error(f"AUTHENTICATION_BLOCKED: Step 1 (TOTP) Login failed (HTTP {response.status_code}): {err_msg or 'Invalid credentials or TOTP'}")
-                    self.auth_status = "AUTHENTICATION_BLOCKED"
-                    return False
+            log_data = login_response.get("data", {}) if isinstance(login_response, dict) else {}
+            
+            # Step 2: Validate MPIN to generate trade token
+            mpin_response = client.totp_validate(
+                mpin=self.mpin
+            )
+            
+            if not mpin_response or (isinstance(mpin_response, dict) and mpin_response.get("stat") != "Ok"):
+                err_msg = ""
+                if isinstance(mpin_response, dict):
+                    err_json = mpin_response.get("error", [{}])
+                    if isinstance(err_json, list) and len(err_json) > 0:
+                        err_msg = str(err_json[0].get("message", ""))
+                    elif "message" in mpin_response:
+                        err_msg = str(mpin_response.get("message"))
+                logger.error(f"AUTHENTICATION_BLOCKED: Step 2 (MPIN) Validation failed: {err_msg or 'Invalid MPIN'}")
+                self.auth_status = "AUTHENTICATION_BLOCKED"
+                return False
                 
-                response_data = response.json().get("data", {})
-                self.session_token = response_data.get("token")
-                self.view_sid = response_data.get("sid")
+            mpin_data = mpin_response.get("data", {}) if isinstance(mpin_response, dict) else {}
+            
+            # Map SDK internal state to the broker's existing fields
+            self.neo_client = client
+            self.session_token = getattr(client.configuration, "bearer_token", None)
+            self.trade_token = getattr(client.configuration, "edit_token", None)
+            self.trading_sid = getattr(client.configuration, "edit_sid", None)
+            self.view_sid = log_data.get("sid") or self.session_token
+            
+            self.dynamic_base_url = mpin_data.get("baseUrl")
+            self.feed_url = mpin_data.get("feedUrl")
+            self.data_center = mpin_data.get("dataCenter")
+            
+            if not self.trade_token or not self.dynamic_base_url:
+                logger.error("AUTHENTICATION_BLOCKED: Step 2 did not return trade token or baseUrl from SDK.")
+                self.auth_status = "AUTHENTICATION_BLOCKED"
+                return False
                 
-                if not self.session_token or not self.view_sid:
-                    logger.error("AUTHENTICATION_BLOCKED: Step 1 did not return view token or sid.")
-                    self.auth_status = "AUTHENTICATION_BLOCKED"
-                    return False
-                
-                # Step 2: Validate MPIN to generate trade token
-                headers["sid"] = self.view_sid
-                headers["Auth"] = self.session_token
-                
-                mpin_payload = {
-                    "mpin": self.mpin
-                }
-                
-                mpin_response = await client.post(f"{self.login_base_url}/login/1.0/tradeApiValidate", headers=headers, json=mpin_payload)
-                if mpin_response.status_code != 200:
-                    err_msg = ""
-                    try:
-                        err_json = mpin_response.json()
-                        if isinstance(err_json, dict) and "error" in err_json:
-                            err_msg = str(err_json["error"])
-                        elif isinstance(err_json, dict) and "message" in err_json:
-                            err_msg = str(err_json["message"])
-                    except Exception:
-                        pass
-                    logger.error(f"AUTHENTICATION_BLOCKED: Step 2 (MPIN) Validation failed (HTTP {mpin_response.status_code}): {err_msg or 'Invalid MPIN'}")
-                    self.auth_status = "AUTHENTICATION_BLOCKED"
-                    return False
-                
-                mpin_data = mpin_response.json().get("data", {})
-                self.trade_token = mpin_data.get("token")
-                self.trading_sid = mpin_data.get("sid")
-                self.dynamic_base_url = mpin_data.get("baseUrl")
-                self.feed_url = mpin_data.get("feedUrl")
-                self.data_center = mpin_data.get("dataCenter")
-                
-                if not self.trade_token or not self.dynamic_base_url:
-                    logger.error("AUTHENTICATION_BLOCKED: Step 2 did not return trade token or baseUrl.")
-                    self.auth_status = "AUTHENTICATION_BLOCKED"
-                    return False
-                
-                logger.info("Authentication successful. Connected to Kotak Neo.")
-                self.auth_status = "CONNECTED"
-                self.is_connected = True
-                return True
+            logger.info("Authentication successful. Connected to Kotak Neo via SDK.")
+            self.auth_status = "CONNECTED"
+            self.is_connected = True
+            return True
 
-        except Exception:
+        except Exception as e:
             logger.error("Authentication failed due to exception. (Details redacted for safety)")
             self.auth_status = "AUTHENTICATION_BLOCKED"
             return False

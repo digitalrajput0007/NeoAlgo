@@ -63,60 +63,49 @@ async def test_successful_authentication_flow(kotak_broker, caplog):
     """
     Tests:
     1. Successful TOTP generation
-    2. TOTP login request has the correct endpoint
-    3. TOTP login has Authorization: consumer_key (not Basic)
-    4. TOTP login has neo-fin-key: neotradeapi
-    5. Payload contains mobileNumber, ucc, and totp
-    6. VIEW_TOKEN and VIEW_SID are extracted correctly
-    7. MPIN validation uses VIEW_TOKEN + VIEW_SID
-    8. TRADING_TOKEN, TRADING_SID, dynamic BASE_URL are extracted
+    2. SDK totp_login and totp_validate are called
+    3. View and Trade tokens are extracted
     12. Secrets/tokens are never present in logs
     """
     import logging
     caplog.set_level(logging.DEBUG)
     
-    class MockResponse:
-        def __init__(self, status_code, json_data, content=b""):
-            self.status_code = status_code
-            self._json_data = json_data
-            self.content = content
-            
-        def json(self):
-            return self._json_data
-
     call_args_list = []
     
-    async def mock_post(url, headers=None, json=None, data=None):
-        call_args_list.append({"url": url, "headers": headers, "json": json, "data": data})
-        if "tradeApiLogin" in url:
-            return MockResponse(200, {"data": {"token": "mock_view_token", "sid": "mock_view_sid"}})
-        elif "tradeApiValidate" in url:
-            return MockResponse(200, {"data": {"token": "mock_trade_token", "sid": "mock_trade_sid", "baseUrl": "https://mock.base.url"}})
-        return MockResponse(404, {})
-
-    with patch("httpx.AsyncClient.post", side_effect=mock_post):
+    class MockNeoAPI:
+        def __init__(self, consumer_key, environment):
+            self.consumer_key = consumer_key
+            self.environment = environment
+            class Config:
+                bearer_token = "mock_view_token"
+                edit_token = "mock_trade_token"
+                edit_sid = "mock_trade_sid"
+            self.configuration = Config()
+            
+        def totp_login(self, mobile_number, ucc, totp):
+            call_args_list.append({"method": "totp_login", "mobile": mobile_number, "ucc": ucc, "totp": totp})
+            return {"stat": "Ok", "data": {"token": "mock_view_token", "sid": "mock_view_sid"}}
+            
+        def totp_validate(self, mpin):
+            call_args_list.append({"method": "totp_validate", "mpin": mpin})
+            return {"stat": "Ok", "data": {"token": "mock_trade_token", "sid": "mock_trade_sid", "baseUrl": "https://mock.base.url"}}
+            
+    with patch("neo_api_client.neo_api.NeoAPI", MockNeoAPI):
         success = await kotak_broker.authenticate()
         
     assert success is True
     assert len(call_args_list) == 2
     
     login_call = call_args_list[0]
-    assert login_call["url"] == "https://mis.kotaksecurities.com/login/1.0/tradeApiLogin"
-    assert login_call["headers"]["Authorization"] == "test_consumer_key"
-    assert "Basic" not in login_call["headers"]["Authorization"]
-    assert login_call["headers"]["neo-fin-key"] == "neotradeapi"
-    assert "mobileNumber" in login_call["json"]
-    assert "ucc" in login_call["json"]
-    assert "totp" in login_call["json"]
-    # Verify TOTP is a 6 digit code (generated from Base32)
-    assert len(login_call["json"]["totp"]) == 6
-    assert login_call["json"]["totp"].isdigit()
+    assert login_call["method"] == "totp_login"
+    assert login_call["mobile"] == "1234567890"
+    assert login_call["ucc"] == "TESTUCC"
+    assert len(login_call["totp"]) == 6
+    assert login_call["totp"].isdigit()
     
     validate_call = call_args_list[1]
-    assert validate_call["url"] == "https://mis.kotaksecurities.com/login/1.0/tradeApiValidate"
-    assert validate_call["headers"]["sid"] == "mock_view_sid"
-    assert validate_call["headers"]["Auth"] == "mock_view_token"
-    assert "mpin" in validate_call["json"]
+    assert validate_call["method"] == "totp_validate"
+    assert validate_call["mpin"] == "123456"
     
     assert kotak_broker.session_token == "mock_view_token"
     assert kotak_broker.trade_token == "mock_trade_token"
@@ -132,22 +121,17 @@ async def test_successful_authentication_flow(kotak_broker, caplog):
 @pytest.mark.asyncio
 async def test_authentication_failed_sanitized(kotak_broker, caplog):
     """13. Failed authentication produces a sanitized error."""
-    class MockResponse:
-        def __init__(self, status_code):
-            self.status_code = status_code
-        def json(self):
-            return {}
-
-    async def mock_post_fail(url, **kwargs):
-        # Return 401 Unauthorized for login
-        return MockResponse(401)
-        
-    with patch("httpx.AsyncClient.post", side_effect=mock_post_fail):
+    class MockNeoAPI:
+        def __init__(self, consumer_key, environment):
+            pass
+        def totp_login(self, mobile_number, ucc, totp):
+            return {"stat": "NotOk", "error": [{"code": "401", "message": "Unauthorized"}]}
+            
+    with patch("neo_api_client.neo_api.NeoAPI", MockNeoAPI):
         success = await kotak_broker.authenticate()
         
     assert success is False
     assert "AUTHENTICATION_BLOCKED: Step 1 (TOTP) Login failed" in caplog.text
-    # Should not print the actual exception text or anything from the HTTP response natively
     assert kotak_broker.auth_status == "AUTHENTICATION_BLOCKED"
 
 @pytest.mark.asyncio
@@ -293,45 +277,38 @@ async def test_auth_failure_prevents_stale_resolution(kotak_broker):
 
 @pytest.mark.asyncio
 async def test_authentication_error_logging_sanitized(kotak_broker, caplog):
-    """Verify that HTTP status and sanitized error payload from Kotak are logged without secret leakage."""
+    """Verify that SDK status and sanitized error payload from Kotak are logged without secret leakage."""
     import logging
     caplog.set_level(logging.DEBUG)
 
-    class MockResponse:
-        def __init__(self, status_code, json_data):
-            self.status_code = status_code
-            self._json_data = json_data
-        def json(self):
-            return self._json_data
+    # 1. Step 1 returns error
+    class MockNeoAPIFailStep1:
+        def __init__(self, consumer_key, environment):
+            pass
+        def totp_login(self, mobile_number, ucc, totp):
+            return {"stat": "NotOk", "error": [{"code": "10508", "message": "TOTP not registered for this user."}]}
 
-    # 1. Step 1 returns 424 with error code 10508
-    async def mock_step1_fail(url, **kwargs):
-        if "tradeApiLogin" in url:
-            return MockResponse(424, {"error": [{"code": "10508", "message": "TOTP not registered for this user."}]})
-        return MockResponse(200, {})
-
-    with patch("httpx.AsyncClient.post", side_effect=mock_step1_fail):
+    with patch("neo_api_client.neo_api.NeoAPI", MockNeoAPIFailStep1):
         success = await kotak_broker.authenticate()
 
     assert success is False
-    assert "HTTP 424" in caplog.text
     assert "TOTP not registered for this user" in caplog.text
     assert "AUTHENTICATION_BLOCKED" in kotak_broker.auth_status
 
-    # 2. Step 2 returns 400 with error payload
+    # 2. Step 2 returns error
     caplog.clear()
-    async def mock_step2_fail(url, **kwargs):
-        if "tradeApiLogin" in url:
-            return MockResponse(200, {"data": {"token": "mock_view_token", "sid": "mock_view_sid"}})
-        if "tradeApiValidate" in url:
-            return MockResponse(400, {"error": [{"code": "10509", "message": "Invalid MPIN."}]})
-        return MockResponse(404, {})
+    class MockNeoAPIFailStep2:
+        def __init__(self, consumer_key, environment):
+            pass
+        def totp_login(self, mobile_number, ucc, totp):
+            return {"stat": "Ok", "data": {"token": "mock_view_token", "sid": "mock_view_sid"}}
+        def totp_validate(self, mpin):
+            return {"stat": "NotOk", "error": [{"code": "10509", "message": "Invalid MPIN."}]}
 
-    with patch("httpx.AsyncClient.post", side_effect=mock_step2_fail):
+    with patch("neo_api_client.neo_api.NeoAPI", MockNeoAPIFailStep2):
         success = await kotak_broker.authenticate()
 
     assert success is False
-    assert "HTTP 400" in caplog.text
     assert "Invalid MPIN" in caplog.text
     assert "AUTHENTICATION_BLOCKED" in kotak_broker.auth_status
 
