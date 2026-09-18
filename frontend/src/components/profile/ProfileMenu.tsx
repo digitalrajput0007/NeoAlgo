@@ -53,7 +53,7 @@ export default function ProfileMenu({ isSidebarExpanded = true }: ProfileMenuPro
   const displayName = profile?.display_name || 'Admin User';
   const roleLabel = profile?.role_label || 'Administrator';
   const avatarUrl = profile?.avatar_url 
-    ? `http://localhost:8000${profile.avatar_url}?t=${new Date().getTime()}` // Add timestamp to break cache
+    ? `${profile.avatar_url}?t=${new Date().getTime()}` // Add timestamp to break cache
     : undefined;
 
   return (

@@ -161,7 +161,7 @@ export default function ProfileDialog({ open, onClose }: ProfileDialogProps) {
 
   // Build the safe avatar URL with timestamp to prevent caching
   const avatarUrl = profile?.avatar_url 
-    ? `http://localhost:8000${profile.avatar_url}?t=${new Date().getTime()}`
+    ? `${profile.avatar_url}?t=${new Date().getTime()}`
     : undefined;
 
   return (
@@ -173,7 +173,7 @@ export default function ProfileDialog({ open, onClose }: ProfileDialogProps) {
         <IconButton
           aria-label="close"
           onClick={onClose}
-          disabled={loading}
+         disabled={loading}
           sx={{ color: (theme) => theme.palette.grey[500] }}
         >
           <CloseIcon />

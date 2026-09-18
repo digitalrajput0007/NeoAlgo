@@ -29,3 +29,7 @@ backend/scripts/
 backend/python/
 backend/pydantic-core/
 
+
+# Runtime data
+data/
+docker-compose.yml.backup

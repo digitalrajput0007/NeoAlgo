@@ -49,7 +49,7 @@ class TradeManager:
         res = await self.broker.resolve_option_contract(underlying, strike, option_type, expiry)
         return str(res.get("pSymbol") or res.get("instrument_token")), int(res.get("lot_size", 75))
 
-    async def is_duplicate_message(self, message_id: str, channel_id: str) -> bool:
+    async def is_duplicate_message(self, message_id: int, channel_id: str) -> bool:
         stmt = select(TelegramMessage).where(
             TelegramMessage.telegram_message_id == str(message_id),
             TelegramMessage.channel_id == str(channel_id)
@@ -57,7 +57,7 @@ class TradeManager:
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none() is not None
 
-    async def record_telegram_message(self, message_id: str, channel_id: str, text: str, parsed: ParseResult):
+    async def record_telegram_message(self, message_id: int, channel_id: str, text: str, parsed: ParseResult):
         msg = TelegramMessage(
             telegram_message_id=str(message_id),
             channel_id=str(channel_id),
@@ -74,7 +74,7 @@ class TradeManager:
         user_id: int,
         broker_account_id: int,
         signal_data: TradeSignal,
-        message_id: str,
+        message_id: int,
         resolved_token: Optional[str] = None,
         resolved_lot_size: Optional[int] = None
     ) -> Trade:

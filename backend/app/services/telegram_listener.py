@@ -620,7 +620,7 @@ class TelegramListenerService:
                 user_id=user_id,
                 broker_account_id=broker_account_id,
                 signal_data=sig,
-                message_id=str(msg_record.id),
+                message_id=msg_record.id,
                 resolved_token=resolved_token
             )
             trade_id = trade.id

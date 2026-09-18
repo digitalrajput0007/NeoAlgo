@@ -16,7 +16,7 @@ import type {
   TradingModeConfig
 } from '../types';
 
-const API_BASE = 'http://localhost:8000/api';
+const API_BASE = '/api';
 
 // Helper function to handle fetch and 401 unauthorized
 async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
